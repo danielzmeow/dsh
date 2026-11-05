@@ -339,10 +339,10 @@ window.__ModuleLoader__.load({
 						const cardRect = card.getBoundingClientRect();
 						const width = pill.offsetWidth === 0 ? 92 : pill.offsetWidth;
 						const gutter = Math.round(centerRect.right - cardRect.right);
-						if (gutter >= width + 12) {
+						if (gutter >= width + 6) {
 							if (pill.parentElement !== centerEl) centerEl.appendChild(pill);
 							pill.dataset.placement = "dock";
-							pill.style.right = gutter - width - 12 + "px";
+							pill.style.right = "0px";
 							pill.style.bottom = Math.round(centerRect.bottom - cardRect.bottom) + "px";
 							return;
 						}
