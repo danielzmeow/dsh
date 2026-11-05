@@ -14,8 +14,8 @@ window.__ModuleLoader__.load({
 		const VISIBLE_MS = 900;
 
 		const css = [
-			"html[data-uit-autohide-scrollbars] :not(:hover):not(:focus-within):not([data-uit-scrolling])::-webkit-scrollbar-thumb{background-color:transparent!important;background-image:none!important}",
-			"html[data-uit-autohide-scrollbars] :not(:hover):not(:focus-within):not([data-uit-scrolling])::-webkit-scrollbar-track{background-color:transparent!important;background-image:none!important}",
+			"html[data-uit-autohide-scrollbars] :not([data-uit-scrolling])::-webkit-scrollbar-thumb{background-color:transparent!important;background-image:none!important}",
+			"html[data-uit-autohide-scrollbars] :not([data-uit-scrolling])::-webkit-scrollbar-track{background-color:transparent!important;background-image:none!important}",
 			"html[data-uit-autohide-scrollbars] ::-webkit-scrollbar-thumb{transition:background-color .18s ease}"
 		].join("");
 

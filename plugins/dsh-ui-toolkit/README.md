@@ -100,9 +100,9 @@ Git 分支                                    [开]
 
 ### 自动隐藏滚动条
 
-- 在 `<html>` 上挂 `data-uit-autohide-scrollbars`，用 CSS 隐藏 `::-webkit-scrollbar-thumb` / `::-webkit-scrollbar-track`，只在 `:hover`、`:focus-within` 或刚滚动过的 900ms 内显示。
+- 在 `<html>` 上挂 `data-uit-autohide-scrollbars`，用 CSS 隐藏 `::-webkit-scrollbar-thumb` / `::-webkit-scrollbar-track`，只在刚滚动过的 900ms 内显示；悬停或焦点在输入框里不会把滚动条钉住。
 - 在 document 的捕获阶段监听 `scroll`，给正在滚动的元素加 `data-uit-scrolling`，900ms 后移除。只改滚动条颜色，不改容器宽高，所以不会有布局跳动。
-- 对 conversation、左右 sidebar、dock panes 等原生 WebKit 滚动条都生效；颜色沿用 `--dsh-scrollbar-thumb` / `--dsh-scrollbar-thumb-hover`，不引入自定义色。
+- 对 conversation、左右 sidebar、dock panes 等原生 WebKit 滚动条都生效；颜色沿用 `--dsh-scrollbar-thumb` / `--dsh-scrollbar-thumb-hover`，不引入自定义色。键盘滚动同样由 `scroll` 事件触发显示。
 - xterm 终端自己的滚动条是自绘的，不受这个规则影响。
 - 只能在 Chromium/Electron 的 `::-webkit-scrollbar` 上工作；系统级 overlay scrollbar 不受 CSS 控制。
 
