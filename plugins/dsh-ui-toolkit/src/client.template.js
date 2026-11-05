@@ -78,7 +78,7 @@ window.__ModuleLoader__.load({
 			"feature.autoLoad.title": "自动加载更早",
 			"feature.autoLoad.hint": "接近对话顶部时自动加载更早历史，不用再点「加载更早」",
 			"feature.terminal.title": "底部终端",
-			"feature.terminal.hint": "在对话列底部保留一条靠右的短横栏，展开为终端；⌘⇧` / Ctrl+Shift+` 开关"
+			"feature.terminal.hint": "右下角浮动的 Terminal 按钮，点开后从底边展开；关闭即结束进程（⌘⇧` / Ctrl+Shift+`）"
 		};
 		const en = {
 			"title": "Interface",
@@ -111,7 +111,7 @@ window.__ModuleLoader__.load({
 			"feature.autoLoad.title": "Auto-load earlier",
 			"feature.autoLoad.hint": "Load earlier history automatically as the conversation nears the top",
 			"feature.terminal.title": "Bottom terminal",
-			"feature.terminal.hint": "Keep a short terminal bar at the conversation bottom-right that expands into the terminal (⌘⇧` / Ctrl+Shift+`)"
+			"feature.terminal.hint": "A floating Terminal button at the bottom-right that expands from the bottom edge; closing ends the process (⌘⇧` / Ctrl+Shift+`)"
 		};
 		//#endregion
 
