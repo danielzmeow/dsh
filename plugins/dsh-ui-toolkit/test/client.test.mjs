@@ -83,14 +83,15 @@ function memoryStorage(initial) {
 }
 
 test("the merged registry exposes all interface features", () => {
-	assert.deepEqual(FEATURE_IDS, ["sidebar", "hero", "motion", "composerHud", "gitBranch", "modelEffort", "viewMenu", "modelContext", "autoLoad"]);
+	assert.deepEqual(FEATURE_IDS, ["sidebar", "sidebarEntries", "hero", "motion", "composerHud", "gitBranch", "modelEffort", "viewMenu", "modelContext", "autoLoad", "terminal"]);
 	for (const id of FEATURE_IDS) assert.equal(DEFAULT_FLAGS[id], true);
 	assert.match(css, /uit_switch/);
 });
 
 test("every feature creator yields a mountable module with its own inject list", () => {
 	const expected = {
-		sidebar: ["slots"],
+		sidebar: [],
+		sidebarEntries: ["slots"],
 		hero: [],
 		motion: [],
 		composerHud: ["slots", "locale"],
@@ -98,7 +99,8 @@ test("every feature creator yields a mountable module with its own inject list",
 		modelEffort: ["slots", "modelDirectories", "sessions", "remote", "remote.session"],
 		viewMenu: ["slots", "locale"],
 		modelContext: ["slots", "locale", "modelDirectories"],
-		autoLoad: []
+		autoLoad: [],
+		terminal: ["webTerminals", "shortcuts", "locale"]
 	};
 	for (const feature of FEATURES) {
 		const module = feature.creator(requireStub);
@@ -158,7 +160,7 @@ test("the feature runner starts, stops, and restarts one feature at a time", asy
 	};
 	const runner = createFeatureRunner(ctx, requireStub);
 	runner.sync({ ...DEFAULT_FLAGS, gitBranch: false });
-	assert.equal(started.length, 8);
+	assert.equal(started.length, 10);
 	assert.equal(runner.has("gitBranch"), false);
 	assert.equal(runner.has("sidebar"), true);
 	assert.equal(runner.has("hero"), true);
@@ -168,7 +170,7 @@ test("the feature runner starts, stops, and restarts one feature at a time", asy
 	assert.equal(runner.has("sidebar"), false);
 
 	await runner.set("sidebar", true);
-	assert.equal(started.length, 9);
+	assert.equal(started.length, 11);
 	assert.equal(runner.has("sidebar"), true);
 
 	await runner.set("gitBranch", true);
@@ -231,7 +233,7 @@ test("apply installs the settings section and starts enabled features", () => {
 	assert.equal(slots[0].options.id, "ui-toolkit");
 	assert.equal(slots[0].options.order, 90);
 	assert.equal(typeof slots[0].component, "function");
-	assert.equal(plugins.length, 9);
+	assert.equal(plugins.length, 11);
 	for (const plugin of plugins) {
 		assert.match(plugin.name, /^@local\/dsh-ui-toolkit\//);
 		assert.equal(typeof plugin.apply, "function");
@@ -247,7 +249,7 @@ test("apply installs the settings section and starts enabled features", () => {
 		const children = node.children !== undefined ? node.children : node.props?.children;
 		return count + countSwitches(children);
 	};
-	assert.equal(countSwitches(tree), 9, "settings page renders one switch per feature");
+	assert.equal(countSwitches(tree), 11, "settings page renders one switch per feature");
 	assert.equal(slots[0].component({ t: (key) => key }).type, "div");
 
 	for (const cleanup of cleanups.reverse()) cleanup();
@@ -503,3 +505,121 @@ test("auto-load captures its own stable anchor and restores it after a fast scro
 	assert.equal(restoreAnchor({ ...scroll, querySelectorAll: () => [] }, anchor), false);
 });
 
+
+
+test("sidebar entry preferences normalize corrupt values", () => {
+	const { normalizeEntryPrefs } = mod.__internals;
+	assert.deepEqual(normalizeEntryPrefs(null), { hidden: [], order: [] });
+	assert.deepEqual(normalizeEntryPrefs({ hidden: ["a", "a", 3], order: ["b", "b", null] }), { hidden: ["a"], order: ["b"] });
+	assert.deepEqual(normalizeEntryPrefs(["a"]), { hidden: [], order: [] });
+});
+
+test("the sidebar entry store orders, hides, and persists panels", () => {
+	const entries = [
+		{ options: { id: "plugins", order: 0, label: () => "Plugins" } },
+		{ options: { id: "market", order: 1, label: "Plugin Market" } },
+		{ options: { id: "schedules", order: 10, label: () => "Automation tasks" } }
+	];
+	const slots = { entriesOfSlot: () => entries, subscribe: () => () => {} };
+	const storage = memoryStorage();
+	const store = mod.__internals.createSidebarEntryStore({ slots, storage });
+	const ids = () => store.getSnapshot().entries.map((entry) => entry.id);
+	assert.deepEqual(ids(), ["plugins", "market", "schedules"]);
+	assert.deepEqual(store.getSnapshot().entries.map((entry) => entry.label), ["Plugins", "Plugin Market", "Automation tasks"]);
+
+	assert.equal(store.move("schedules", -1), true);
+	assert.deepEqual(ids(), ["plugins", "schedules", "market"]);
+	assert.equal(store.move("plugins", -1), false, "the first row cannot move up");
+	assert.equal(store.move("plugins", 5), false, "the last position cannot overflow");
+
+	store.setHidden("market", true);
+	assert.deepEqual(store.getSnapshot().hidden, ["market"]);
+	assert.deepEqual(mod.__internals.loadEntryPrefs(storage), {
+		hidden: ["market"],
+		order: ["plugins", "schedules", "market"]
+	});
+
+	const reloaded = mod.__internals.createSidebarEntryStore({ slots, storage });
+	assert.deepEqual(reloaded.getSnapshot().entries.map((entry) => entry.id), ["plugins", "schedules", "market"]);
+	assert.deepEqual(reloaded.getSnapshot().hidden, ["market"]);
+
+	entries.push({ options: { id: "browser", order: 20, label: "Browser" } });
+	reloaded.refreshEntries();
+	assert.deepEqual(reloaded.getSnapshot().entries.map((entry) => entry.id), ["plugins", "schedules", "market", "browser"]);
+
+	reloaded.reset();
+	assert.deepEqual(reloaded.getSnapshot().entries.map((entry) => entry.id), ["plugins", "market", "schedules", "browser"]);
+	assert.deepEqual(mod.__internals.loadEntryPrefs(storage), { hidden: [], order: [] });
+});
+
+test("sidebar panel rows map by label before falling back to position", () => {
+	const feature = FEATURES.find((item) => item.id === "sidebarEntries").creator(requireStub);
+	const { mapRows, isPanelRow } = feature.__internals;
+	const makeRow = (label, hasPopup) => ({
+		tagName: "BUTTON",
+		getAttribute: (name) => {
+			if (name === "aria-label") return label;
+			if (name === "aria-haspopup") return hasPopup ?? null;
+			return null;
+		}
+	});
+	const entries = [
+		{ id: "a", label: "A", nativeOrder: 0 },
+		{ id: "b", label: "B", nativeOrder: 1 }
+	];
+	const rows = [makeRow("B"), makeRow("A")];
+	const assigned = mapRows(rows, entries, (row) => row.getAttribute("aria-label"));
+	assert.equal(assigned.get(rows[0]), "b");
+	assert.equal(assigned.get(rows[1]), "a");
+
+	const duplicateEntries = [
+		{ id: "one", label: "Same", nativeOrder: 0 },
+		{ id: "two", label: "Same", nativeOrder: 1 }
+	];
+	const duplicateRows = [makeRow("Same"), makeRow("Same")];
+	const duplicate = mapRows(duplicateRows, duplicateEntries, (row) => row.getAttribute("aria-label"));
+	assert.deepEqual([duplicate.get(duplicateRows[0]), duplicate.get(duplicateRows[1])], ["one", "two"]);
+
+	const unmatchedRows = [makeRow("Other")];
+	assert.equal(mapRows(unmatchedRows, entries, (row) => row.getAttribute("aria-label")).size, 0);
+	assert.equal(isPanelRow(makeRow("Plugins")), true);
+	assert.equal(isPanelRow(makeRow("More", "menu")), false, "More is not a panel row");
+	assert.equal(isPanelRow({ tagName: "DIV" }), false);
+});
+
+test("the settings manager renders one row per live panel and applies order clicks", () => {
+	const entries = [
+		{ options: { id: "plugins", order: 0, label: "Plugins" } },
+		{ options: { id: "market", order: 1, label: "Plugin Market" } },
+		{ options: { id: "schedules", order: 10, label: "Automation tasks" } }
+	];
+	const slots = { entriesOfSlot: () => entries, subscribe: () => () => {} };
+	const store = mod.__internals.createSidebarEntryStore({ slots, storage: memoryStorage() });
+	const tree = mod.SidebarEntriesManager({ store, t: (key) => key });
+	const collect = (node, className) => {
+		const found = [];
+		const walk = (value) => {
+			if (value === null || typeof value !== "object") return;
+			if (Array.isArray(value)) {
+				value.forEach(walk);
+				return;
+			}
+			if (typeof value.type === "function") {
+				walk(value.type(value.props));
+				return;
+			}
+			if (value.props !== undefined && value.props.className === className) found.push(value);
+			const children = value.children !== undefined ? value.children : value.props?.children;
+			walk(children);
+		};
+		walk(node);
+		return found;
+	};
+	assert.equal(collect(tree, "uit_entryRow").length, 3);
+	assert.equal(collect(tree, "uit_switch").length, 3);
+	assert.equal(collect(tree, "uit_orderButton").length, 6);
+
+	const up = collect(tree, "uit_orderButton").filter((node) => node.props["aria-label"] === "entries.moveUp" && !node.props.disabled);
+	up[0].props.onClick();
+	assert.deepEqual(store.getSnapshot().entries.map((entry) => entry.id), ["market", "plugins", "schedules"]);
+});

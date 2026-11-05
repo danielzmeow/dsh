@@ -6,6 +6,17 @@ window.__ModuleLoader__.load({
 		const React = require("react");
 		const h = React.createElement;
 
+		//#region vendored xterm
+/* @@VENDOR@@ */
+		//#endregion
+
+		/**
+		 * Shared sidebar-entry store created by apply(). The feature creator reads
+		 * it through this closure; keeping it here lets the settings section and
+		 * the running feature observe the same snapshot.
+		 */
+		let sidebarEntriesHost = null;
+
 		//#region merged feature factories
 /* @@CREATORS@@ */
 		//#endregion
@@ -17,6 +28,7 @@ window.__ModuleLoader__.load({
 		 */
 		const FEATURES = Object.freeze([
 			Object.freeze({ id: "sidebar", creator: createSidebarUnify, titleKey: "feature.sidebar.title", hintKey: "feature.sidebar.hint" }),
+			Object.freeze({ id: "sidebarEntries", creator: createSidebarEntries, titleKey: "feature.sidebarEntries.title", hintKey: "feature.sidebarEntries.hint" }),
 			Object.freeze({ id: "hero", creator: createHeroCleanup, titleKey: "feature.hero.title", hintKey: "feature.hero.hint" }),
 			Object.freeze({ id: "motion", creator: createSidebarMotion, titleKey: "feature.motion.title", hintKey: "feature.motion.hint" }),
 			Object.freeze({ id: "composerHud", creator: createComposerHud, titleKey: "feature.composerHud.title", hintKey: "feature.composerHud.hint" }),
@@ -24,7 +36,8 @@ window.__ModuleLoader__.load({
 			Object.freeze({ id: "modelEffort", creator: createModelEffort, titleKey: "feature.modelEffort.title", hintKey: "feature.modelEffort.hint" }),
 			Object.freeze({ id: "viewMenu", creator: createViewMenu, titleKey: "feature.viewMenu.title", hintKey: "feature.viewMenu.hint" }),
 			Object.freeze({ id: "modelContext", creator: createModelContext, titleKey: "feature.modelContext.title", hintKey: "feature.modelContext.hint" }),
-			Object.freeze({ id: "autoLoad", creator: createAutoLoadEarlier, titleKey: "feature.autoLoad.title", hintKey: "feature.autoLoad.hint" })
+			Object.freeze({ id: "autoLoad", creator: createAutoLoadEarlier, titleKey: "feature.autoLoad.title", hintKey: "feature.autoLoad.hint" }),
+			Object.freeze({ id: "terminal", creator: createTerminalPanelFeature, titleKey: "feature.terminal.title", hintKey: "feature.terminal.hint" })
 		]);
 		const FEATURE_IDS = FEATURES.map((feature) => feature.id);
 		const FEATURE_BY_ID = new Map(FEATURES.map((feature) => [feature.id, feature]));
@@ -38,7 +51,16 @@ window.__ModuleLoader__.load({
 			"title": "界面",
 			"description": "选择要启用的界面增强。更改会立即生效，并记住在这台机器上。",
 			"feature.sidebar.title": "侧边栏",
-			"feature.sidebar.hint": "统一 New Session 行、去掉 HARNESS 徽章，没有插件面板时隐藏「更多」",
+			"feature.sidebar.hint": "统一 New Session 行，去掉 HARNESS 徽章",
+			"feature.sidebarEntries.title": "侧边栏入口",
+			"feature.sidebarEntries.hint": "管理全局面板的显示和顺序，「更多」始终隐藏",
+			"entries.title": "全局面板",
+			"entries.hint": "用箭头调整顺序，或关闭某一项。更改立即生效，并记住在这台机器上。",
+			"entries.reset": "恢复默认",
+			"entries.empty": "还没有可管理的全局面板。",
+			"entries.moveUp": "上移",
+			"entries.moveDown": "下移",
+			"entries.moreHidden": "「更多」已隐藏，插件市场等入口仍在上方管理。",
 			"feature.hero.title": "新会话标题",
 			"feature.hero.hint": "去掉「探索未至之境 / Into the Unknown」旁边的 Preview 徽章",
 			"feature.motion.title": "侧边栏动画",
@@ -54,13 +76,24 @@ window.__ModuleLoader__.load({
 			"feature.modelContext.title": "对话成本",
 			"feature.modelContext.hint": "在输入框状态栏显示估算费用，点开查看分项明细",
 			"feature.autoLoad.title": "自动加载更早",
-			"feature.autoLoad.hint": "接近对话顶部时自动加载更早历史，不用再点「加载更早」"
+			"feature.autoLoad.hint": "接近对话顶部时自动加载更早历史，不用再点「加载更早」",
+			"feature.terminal.title": "底部终端",
+			"feature.terminal.hint": "在对话列底部保留一条靠右的短横栏，展开为终端；⌘⇧` / Ctrl+Shift+` 开关"
 		};
 		const en = {
 			"title": "Interface",
 			"description": "Choose which interface enhancements to enable. Changes apply immediately and are remembered on this machine.",
 			"feature.sidebar.title": "Sidebar",
-			"feature.sidebar.hint": "Flatten New Session, remove the HARNESS badge, and hide More when no plugin adds a sidebar panel",
+			"feature.sidebar.hint": "Flatten New Session and remove the HARNESS badge",
+			"feature.sidebarEntries.title": "Sidebar entries",
+			"feature.sidebarEntries.hint": "Choose which global panels appear and in what order; More is always hidden",
+			"entries.title": "Global panels",
+			"entries.hint": "Reorder with the arrows or switch a row off. Changes apply immediately and are remembered on this machine.",
+			"entries.reset": "Reset",
+			"entries.empty": "No global panels are registered yet.",
+			"entries.moveUp": "Move up",
+			"entries.moveDown": "Move down",
+			"entries.moreHidden": "More is hidden. Plugins and the market remain manageable above.",
 			"feature.hero.title": "Hero headline",
 			"feature.hero.hint": "Remove the Preview badge beside the hero headline",
 			"feature.motion.title": "Sidebar motion",
@@ -76,7 +109,9 @@ window.__ModuleLoader__.load({
 			"feature.modelContext.title": "Conversation cost",
 			"feature.modelContext.hint": "Show the estimated cost in the composer status row, with a click-open breakdown",
 			"feature.autoLoad.title": "Auto-load earlier",
-			"feature.autoLoad.hint": "Load earlier history automatically as the conversation nears the top"
+			"feature.autoLoad.hint": "Load earlier history automatically as the conversation nears the top",
+			"feature.terminal.title": "Bottom terminal",
+			"feature.terminal.hint": "Keep a short terminal bar at the conversation bottom-right that expands into the terminal (⌘⇧` / Ctrl+Shift+`)"
 		};
 		//#endregion
 
@@ -97,7 +132,29 @@ window.__ModuleLoader__.load({
 			".uit_switch:checked{background:var(--dsw-alias-state-business-primary)}",
 			".uit_switch:checked::after{transform:translateX(16px)}",
 			".uit_switch:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}",
-			".uit_switch:disabled{cursor:default;opacity:.5}"
+			".uit_switch:disabled{cursor:default;opacity:.5}",
+			".uit_row:has(+.uit_subsection){border-bottom:0}",
+			".uit_subsection{box-sizing:border-box;padding:2px 0 14px;border-bottom:.5px solid var(--dsw-alias-border-l2);margin-top:-6px}",
+			".uit_subhead{align-items:center;gap:12px;display:flex}",
+			".uit_sublabel{color:var(--dsw-alias-label-primary);font-size:13px;font-weight:500;line-height:20px;flex:1}",
+			".uit_link{appearance:none;background:none;border:0;color:var(--dsw-alias-state-business-primary);cursor:pointer;font:inherit;font-size:12px;line-height:20px;padding:2px 0}",
+			".uit_link:hover{text-decoration:underline}",
+			".uit_link:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}",
+			".uit_subhint{color:var(--dsw-alias-label-caption);font-size:12px;line-height:18px;margin:2px 0 10px}",
+			".uit_entries{flex-direction:column;gap:4px;display:flex}",
+			".uit_entryRow{align-items:center;gap:10px;padding:6px 8px;border-radius:var(--dsw-radius-md);display:flex}",
+			".uit_entryRow:hover{background:var(--dsw-alias-interactive-bg-hover)}",
+			".uit_entryRow[data-hidden=\"true\"] .uit_entryName{color:var(--dsw-alias-label-caption)}",
+			".uit_order{flex-direction:column;gap:1px;flex:none;display:flex}",
+			".uit_orderButton{appearance:none;background:none;border:0;border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-label-secondary);cursor:pointer;width:20px;height:15px;padding:0;justify-content:center;align-items:center;display:flex}",
+			".uit_orderButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}",
+			".uit_orderButton:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-1px}",
+			".uit_orderButton:disabled{cursor:default;opacity:.25}",
+			".uit_entryText{flex-direction:column;gap:1px;min-width:0;flex:1;display:flex}",
+			".uit_entryName{color:var(--dsw-alias-label-primary);font-size:13px;line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+			".uit_entryId{color:var(--dsw-alias-label-caption);font-family:var(--ds-font-family-code);font-size:11px;line-height:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+			".uit_empty{color:var(--dsw-alias-label-caption);font-size:12px;line-height:18px;padding:6px 0}",
+			".uit_moreNote{color:var(--dsw-alias-label-caption);font-size:11px;line-height:16px;margin-top:8px}"
 		].join("");
 		const cssTagId = "@local/dsh-ui-toolkit/ui-toolkit.css";
 		//#endregion
@@ -215,11 +272,12 @@ window.__ModuleLoader__.load({
 		 * so it keeps the feature choices across restarts; localStorage remains
 		 * the fallback when cookies are unavailable.
 		 */
-		function createPreferenceStorage() {
+		function createPreferenceStorage(cookieName) {
+			const name = cookieName ?? COOKIE_NAME;
 			const local = browserStorage();
 			return {
 				getItem: (key) => {
-					const cookie = readCookie(COOKIE_NAME);
+					const cookie = readCookie(name);
 					if (cookie !== null) return cookie;
 					try {
 						return local === undefined || local === null ? null : local.getItem(key);
@@ -228,12 +286,276 @@ window.__ModuleLoader__.load({
 					}
 				},
 				setItem: (key, value) => {
-					writeCookie(COOKIE_NAME, value);
+					writeCookie(name, value);
 					try {
 						if (local !== undefined && local !== null) local.setItem(key, value);
 					} catch (_error) {
 						// The cookie already carries the value.
 					}
+				}
+			};
+		}
+		//#endregion
+
+		//#region sidebar entry preferences
+		/** Persisted selection for the global panel list. */
+		const ENTRY_STORAGE_KEY = "dsh-ui-toolkit.sidebar-entries.v1";
+		const ENTRY_COOKIE_NAME = "dsh_ui_toolkit_sidebar_entries";
+
+		/**
+		 * Keep only unique string ids; a corrupted value must not break the
+		 * settings page or the sidebar.
+		 * @param {any} value
+		 * @returns {{ hidden: string[], order: string[] }}
+		 */
+		function normalizeEntryPrefs(value) {
+			const hidden = [];
+			const order = [];
+			const seenHidden = new Set();
+			const seenOrder = new Set();
+			if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+				if (Array.isArray(value.hidden)) {
+					for (const id of value.hidden) {
+						if (typeof id !== "string" || seenHidden.has(id)) continue;
+						seenHidden.add(id);
+						hidden.push(id);
+					}
+				}
+				if (Array.isArray(value.order)) {
+					for (const id of value.order) {
+						if (typeof id !== "string" || seenOrder.has(id)) continue;
+						seenOrder.add(id);
+						order.push(id);
+					}
+				}
+			}
+			return { hidden, order };
+		}
+
+		/** @param {Storage | undefined} storage */
+		function loadEntryPrefs(storage) {
+			if (storage === undefined || storage === null) return { hidden: [], order: [] };
+			try {
+				const raw = storage.getItem(ENTRY_STORAGE_KEY);
+				if (raw === null || raw === "") return { hidden: [], order: [] };
+				return normalizeEntryPrefs(JSON.parse(raw));
+			} catch (_error) {
+				return { hidden: [], order: [] };
+			}
+		}
+
+		/** @param {Storage | undefined} storage @param {{ hidden: string[], order: string[] }} prefs */
+		function saveEntryPrefs(storage, prefs) {
+			if (storage === undefined || storage === null) return;
+			try {
+				storage.setItem(ENTRY_STORAGE_KEY, JSON.stringify(prefs));
+			} catch (_error) {
+				// Private mode / quota: the manager still works for this session.
+			}
+		}
+
+		/** @param {any} label @param {string} fallback */
+		function resolveEntryLabel(label, fallback) {
+			try {
+				const value = typeof label === "function" ? label() : label;
+				if (typeof value === "string" && value !== "") return value;
+			} catch (_error) {
+				// A label whose locale service is not ready yet falls back to id.
+			}
+			return fallback;
+		}
+
+		/**
+		 * Snapshot the live panel roster. Kept free of DOM access so the host
+		 * tests can drive it with a plain slot stub.
+		 * @param {any} slots
+		 * @returns {ReadonlyArray<{ id: string, label: string, nativeOrder: number }>}
+		 */
+		function readPanelEntries(slots) {
+			let entries = [];
+			try {
+				if (slots !== null && slots !== undefined && typeof slots.entriesOfSlot === "function") {
+					entries = slots.entriesOfSlot("sidebar.panellist") ?? [];
+				}
+			} catch (_error) {
+				// The registry may not be ready yet; the subscription re-syncs.
+			}
+			const seen = new Set();
+			const rows = [];
+			let index = 0;
+			for (const entry of entries) {
+				const options = entry !== null && entry !== undefined ? entry.options : undefined;
+				const id = options !== null && options !== undefined && typeof options.id === "string" ? options.id : null;
+				if (id === null || seen.has(id)) continue;
+				seen.add(id);
+				rows.push({
+					id,
+					label: resolveEntryLabel(options.label, id),
+					nativeOrder: typeof options.order === "number" ? options.order : 0,
+					index
+				});
+				index += 1;
+			}
+			rows.sort((left, right) => left.nativeOrder - right.nativeOrder || left.index - right.index);
+			return rows.map(({ id, label, nativeOrder }) => ({ id, label, nativeOrder }));
+		}
+
+		/**
+		 * @param {ReadonlyArray<any>} entries
+		 * @param {ReadonlyArray<string>} order
+		 * @returns {ReadonlyArray<any>}
+		 */
+		function orderPanelEntries(entries, order) {
+			const remaining = new Map(entries.map((entry) => [entry.id, entry]));
+			const result = [];
+			for (const id of order) {
+				const entry = remaining.get(id);
+				if (entry === undefined) continue;
+				result.push(entry);
+				remaining.delete(id);
+			}
+			for (const entry of entries) {
+				if (!remaining.has(entry.id)) continue;
+				result.push(entry);
+				remaining.delete(entry.id);
+			}
+			return result;
+		}
+
+		/**
+		 * @param {ReadonlyArray<any>} entries
+		 * @param {ReadonlyArray<string>} order
+		 * @param {string} id
+		 * @param {number} delta
+		 * @returns {string[] | null}
+		 */
+		function shiftPanelOrder(entries, order, id, delta) {
+			const ids = orderPanelEntries(entries, order).map((entry) => entry.id);
+			const from = ids.indexOf(id);
+			if (from < 0) return null;
+			const to = from + delta;
+			if (to < 0 || to >= ids.length) return null;
+			ids.splice(from, 1);
+			ids.splice(to, 0, id);
+			return ids;
+		}
+
+		/**
+		 * Shared store for the sidebar entry manager: the live roster plus the
+		 * user's order/visibility choices, persisted through the same
+		 * host-scoped cookie mechanism as the feature flags.
+		 * @param {{ slots: any, locale?: any, storage?: any }} options
+		 */
+		function createSidebarEntryStore(options) {
+			const slots = options.slots;
+			const locale = options.locale;
+			const storage = options.storage;
+
+			let prefs = loadEntryPrefs(storage);
+			let entries = readPanelEntries(slots);
+			const listeners = new Set();
+
+			const build = () => {
+				const ordered = orderPanelEntries(entries, prefs.order);
+				const hiddenSet = new Set(prefs.hidden);
+				return {
+					entries: ordered,
+					hidden: ordered.filter((entry) => hiddenSet.has(entry.id)).map((entry) => entry.id)
+				};
+			};
+
+			let snapshot = build();
+
+			const signature = (value) => value.entries.map((entry) => entry.id + "\u0000" + entry.label).join("\u0001") + "\u0002" + value.hidden.join("\u0001");
+
+			const publish = () => {
+				const next = build();
+				if (signature(next) === signature(snapshot)) return;
+				snapshot = next;
+				for (const listener of [...listeners]) {
+					try {
+						listener();
+					} catch (error) {
+						console.error("ui-toolkit: sidebar entry listener failed", error);
+					}
+				}
+			};
+
+			const commit = (next) => {
+				prefs = normalizeEntryPrefs(next);
+				saveEntryPrefs(storage, prefs);
+				publish();
+			};
+
+			return {
+				getSnapshot: () => snapshot,
+				subscribe: (listener) => {
+					listeners.add(listener);
+					return () => listeners.delete(listener);
+				},
+				/**
+				 * @param {string} id
+				 * @param {boolean} hidden
+				 */
+				setHidden: (id, hidden) => {
+					const set = new Set(prefs.hidden);
+					if (hidden) set.add(id);
+					else set.delete(id);
+					commit({ ...prefs, hidden: [...set] });
+				},
+				/**
+				 * @param {string} id
+				 * @param {number} delta
+				 * @returns {boolean}
+				 */
+				move: (id, delta) => {
+					const order = shiftPanelOrder(entries, prefs.order, id, delta);
+					if (order === null) return false;
+					commit({ ...prefs, order });
+					return true;
+				},
+				reset: () => {
+					commit({ hidden: [], order: [] });
+				},
+				refreshEntries: () => {
+					entries = readPanelEntries(slots);
+					publish();
+				},
+				start: () => {
+					const disposers = [];
+					try {
+						if (slots !== null && slots !== undefined && typeof slots.subscribe === "function") {
+							const dispose = slots.subscribe("sidebar.panellist", () => {
+								entries = readPanelEntries(slots);
+								publish();
+							});
+							if (typeof dispose === "function") disposers.push(dispose);
+						}
+					} catch (_error) {
+						// No live registry: the initial snapshot is still usable.
+					}
+					try {
+						if (locale !== null && locale !== undefined && typeof locale.subscribe === "function") {
+							const dispose = locale.subscribe(() => {
+								entries = readPanelEntries(slots);
+								publish();
+							});
+							if (typeof dispose === "function") disposers.push(dispose);
+						}
+					} catch (_error) {
+						// Labels keep their initial language.
+					}
+					entries = readPanelEntries(slots);
+					publish();
+					return () => {
+						for (const dispose of disposers.splice(0)) {
+							try {
+								dispose();
+							} catch (_error) {
+								// Best-effort unsubscription.
+							}
+						}
+					};
 				}
 			};
 		}
@@ -409,6 +731,13 @@ window.__ModuleLoader__.load({
 		//#region settings UI
 		let activeStore = null;
 		let activeRunner = null;
+		let activeEntryStore = null;
+		/** Stable empty snapshot so the section renders before apply() wires the store. */
+		const EMPTY_ENTRY_SNAPSHOT = Object.freeze({ entries: Object.freeze([]), hidden: Object.freeze([]) });
+		const EMPTY_ENTRY_STORE = Object.freeze({
+			subscribe: () => () => {},
+			getSnapshot: () => EMPTY_ENTRY_SNAPSHOT
+		});
 
 		/** Hooks shim so the section also works if the runtime predates useSyncExternalStore. */
 		function useStoreSnapshot(subscribe, getSnapshot) {
@@ -429,19 +758,93 @@ window.__ModuleLoader__.load({
 			});
 		}
 
+		/** Small chevron used by the order buttons. */
+		function Chevron({ up }) {
+			return h("svg", { width: 10, height: 10, viewBox: "0 0 16 16", "aria-hidden": "true" },
+				h("path", {
+					d: up ? "M4 10l4-4 4 4" : "M4 6l4 4 4-4",
+					fill: "none",
+					stroke: "currentColor",
+					strokeWidth: 1.75,
+					strokeLinecap: "round",
+					strokeLinejoin: "round"
+				})
+			);
+		}
+
+		/**
+		 * Inline manager shown under the Sidebar entries switch. It reads the
+		 * shared store so its order matches what the sidebar renders.
+		 */
+		function SidebarEntriesManager({ store, t }) {
+			const snapshot = useStoreSnapshot(store.subscribe, store.getSnapshot);
+			const entries = snapshot.entries;
+			return h("div", { className: "uit_subsection" },
+				h("div", { className: "uit_subhead" },
+					h("div", { className: "uit_sublabel" }, t("entries.title")),
+					h("button", {
+						type: "button",
+						className: "uit_link",
+						onClick: () => store.reset()
+					}, t("entries.reset"))
+				),
+				h("div", { className: "uit_subhint" }, t("entries.hint")),
+				entries.length === 0
+					? h("div", { className: "uit_empty" }, t("entries.empty"))
+					: h("div", { className: "uit_entries" },
+						entries.map((entry, index) => {
+							const hidden = snapshot.hidden.indexOf(entry.id) >= 0;
+							return h("div", {
+								key: entry.id,
+								className: "uit_entryRow",
+								"data-hidden": hidden ? "true" : "false"
+							},
+								h("div", { className: "uit_order" },
+									h("button", {
+										type: "button",
+										className: "uit_orderButton",
+										"aria-label": t("entries.moveUp"),
+										disabled: index === 0,
+										onClick: () => store.move(entry.id, -1)
+									}, h(Chevron, { up: true })),
+									h("button", {
+										type: "button",
+										className: "uit_orderButton",
+										"aria-label": t("entries.moveDown"),
+										disabled: index === entries.length - 1,
+										onClick: () => store.move(entry.id, 1)
+									}, h(Chevron, { up: false }))
+								),
+								h("div", { className: "uit_entryText" },
+									h("div", { className: "uit_entryName" }, entry.label),
+									entry.label === entry.id ? null : h("div", { className: "uit_entryId" }, entry.id)
+								),
+								h(Switch, {
+									checked: !hidden,
+									label: entry.label,
+									onChange: (next) => store.setHidden(entry.id, !next)
+								})
+							);
+						})
+					),
+				h("div", { className: "uit_moreNote" }, t("entries.moreHidden"))
+			);
+		}
+
 		function UIToolkitSection(props) {
 			const t = props !== null && props !== undefined && typeof props.t === "function" ? props.t : (key) => key;
 			if (activeStore === null) return null;
 			const flags = useStoreSnapshot(activeStore.subscribe, activeStore.getSnapshot);
+			const entryStore = activeEntryStore ?? EMPTY_ENTRY_STORE;
 			return h("div", { className: "uit_section" },
 				h("div", { className: "uit_intro" },
 					h("div", { className: "uit_title" }, t("title")),
 					h("div", { className: "uit_description" }, t("description"))
 				),
 				h("div", { className: "uit_list" },
-					FEATURES.map((feature) => {
+					FEATURES.flatMap((feature) => {
 						const enabled = flags[feature.id] !== false;
-						return h("div", { key: feature.id, className: "uit_row" },
+						const row = h("div", { key: feature.id, className: "uit_row" },
 							h("div", { className: "uit_text" },
 								h("div", { className: "uit_label" }, t(feature.titleKey)),
 								h("div", { className: "uit_hint" }, t(feature.hintKey))
@@ -456,6 +859,12 @@ window.__ModuleLoader__.load({
 								}
 							})
 						);
+						if (feature.id !== "sidebarEntries" || !enabled) return [row];
+						return [row, h(SidebarEntriesManager, {
+							key: feature.id + "-manager",
+							store: entryStore,
+							t
+						})];
 					})
 				)
 			);
@@ -480,9 +889,17 @@ window.__ModuleLoader__.load({
 			const translate = typeof ctx.locale.bind === "function" ? ctx.locale.bind(NS) : (key) => key;
 
 			const store = createFlagsStore(createPreferenceStorage());
+			const entryStore = createSidebarEntryStore({
+				slots: ctx.slots,
+				locale: ctx.locale,
+				storage: createPreferenceStorage(ENTRY_COOKIE_NAME)
+			});
 			const runner = createFeatureRunner(ctx, require);
+			sidebarEntriesHost = entryStore;
 			activeStore = store;
 			activeRunner = runner;
+			activeEntryStore = entryStore;
+			ctx.effect(() => entryStore.start(), "ui-toolkit: sidebar entry catalog");
 			runner.sync(store.read());
 
 			ctx.slots.inject("settings.section", () => ctx.slots.register({
@@ -496,6 +913,8 @@ window.__ModuleLoader__.load({
 			ctx.effect(() => () => {
 				activeRunner = null;
 				activeStore = null;
+				activeEntryStore = null;
+				sidebarEntriesHost = null;
 			}, "ui-toolkit: settings state");
 		}
 		//#endregion
@@ -503,6 +922,7 @@ window.__ModuleLoader__.load({
 		exports.apply = apply;
 		exports.inject = inject;
 		exports.UIToolkitSection = UIToolkitSection;
+		exports.SidebarEntriesManager = SidebarEntriesManager;
 		exports.__internals = {
 			FEATURES,
 			FEATURE_IDS,
@@ -516,6 +936,15 @@ window.__ModuleLoader__.load({
 			COOKIE_NAME,
 			createScopedContext,
 			createFeatureRunner,
+			ENTRY_STORAGE_KEY,
+			ENTRY_COOKIE_NAME,
+			normalizeEntryPrefs,
+			loadEntryPrefs,
+			saveEntryPrefs,
+			readPanelEntries,
+			orderPanelEntries,
+			shiftPanelOrder,
+			createSidebarEntryStore,
 			css
 		};
 		return module.exports;

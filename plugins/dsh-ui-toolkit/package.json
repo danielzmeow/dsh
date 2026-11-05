@@ -2,7 +2,7 @@
   "name": "@local/dsh-ui-toolkit",
   "version": "1.0.0",
   "private": true,
-  "description": "One switchable interface toolkit: sidebar polish, hero Preview badge cleanup, sidebar motion, auto-load earlier history, composer HUD, Git branch switcher, model effort slider, view menu, and conversation cost",
+  "description": "One switchable interface toolkit: sidebar polish, sidebar entry manager, hero Preview badge cleanup, sidebar motion, auto-load earlier history, composer HUD, Git branch switcher, model effort slider, view menu, conversation cost, and a bottom terminal",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -20,7 +20,8 @@
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "vendor/"
   ],
   "scripts": {
     "build": "node scripts/build-client.mjs"
@@ -44,7 +45,8 @@
     "ui",
     "sidebar",
     "composer",
-    "git"
+    "git",
+    "terminal"
   ],
   "license": "MIT"
 }

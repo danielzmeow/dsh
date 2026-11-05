@@ -5,16 +5,6 @@ window.__ModuleLoader__.load({
 		var exports = module.exports;
 
 		//#region constants
-		/** Slot whose registrations are the panel rows below New Session. */
-		const PANEL_SLOT = "sidebar.panellist";
-		/**
-		 * Panels shipped by the app itself. Every other registered panel comes
-		 * from an installed plugin; only those make the More (pin/manage) row
-		 * useful, so More is hidden while this set is the whole roster.
-		 */
-		const OFFICIAL_PANEL_IDS = new Set(["plugins", "schedules"]);
-		/** Root data attribute consumed by the stylesheet as the More switch. */
-		const MORE_FLAG = "dsuHasPluginPanels";
 		const cssTagId = "@local/dsh-sidebar-unify/sidebar-unify.css";
 		//#endregion
 
@@ -41,79 +31,12 @@ window.__ModuleLoader__.load({
 			// text. Hide the badge plate and its glyph group, leaving the
 			// deepseek wordmark and the mark beside it untouched.
 			"div[class*=\"logoRow\"] [class*=\"brandName\"] svg>rect{display:none!important}",
-			"div[class*=\"logoRow\"] [class*=\"brandName\"] svg [clip-path*=\"badge\"]{display:none!important}",
-			// More only manages plugin panels. Without one there is nothing to
-			// pin or open there, so the row disappears instead of ending the list
-			// with a dead control.
-			"html[data-dsu-has-plugin-panels=\"false\"] nav[class*=\"panelList\"] button[class*=\"panelRow\"][aria-haspopup=\"menu\"]{display:none!important}",
-			"html[data-dsu-has-plugin-panels=\"false\"] nav[class*=\"panelList\"] [class*=\"moreAnchor\"]{display:none!important}"
+			"div[class*=\"logoRow\"] [class*=\"brandName\"] svg [clip-path*=\"badge\"]{display:none!important}"
 		].join("");
 		//#endregion
 
-		//#region helpers
-		/**
-		 * Read a panel id from either registration shape: the current
-		 * `{ options: { id } }` entry or a bare options object.
-		 * @param {any} entry
-		 * @returns {string | null}
-		 */
-		function panelId(entry) {
-			if (entry === null || entry === undefined) return null;
-			if (typeof entry.id === "string") return entry.id;
-			const options = entry.options;
-			if (options !== null && options !== undefined && typeof options.id === "string") return options.id;
-			return null;
-		}
-
-		/**
-		 * Whether any registered panel comes from a plugin rather than the app.
-		 * @param {Iterable<any> | null | undefined} entries
-		 * @returns {boolean}
-		 */
-		function hasPluginPanels(entries) {
-			if (entries === null || entries === undefined) return false;
-			for (const entry of entries) {
-				const id = panelId(entry);
-				if (id !== null && !OFFICIAL_PANEL_IDS.has(id)) return true;
-			}
-			return false;
-		}
-
-		/**
-		 * Read the live panel roster without letting a missing registry or an
-		 * unloading package take the client down.
-		 * @param {any} ctx
-		 * @returns {ReadonlyArray<any>}
-		 */
-		function readPanelEntries(ctx) {
-			try {
-				if (typeof ctx.slots.entriesOfSlot === "function") return ctx.slots.entriesOfSlot(PANEL_SLOT) ?? [];
-				if (typeof ctx.slots.entries === "function") return ctx.slots.entries(PANEL_SLOT) ?? [];
-			} catch (_error) {
-				// A registry that is not ready yet simply means "no plugin panels";
-				// the subscription below re-syncs when registrations arrive.
-			}
-			return [];
-		}
-
-		/**
-		 * Publish the More switch on <html>. Kept as a pure function so the
-		 * tests can exercise the roster rules without a DOM.
-		 * @param {{ dataset: Record<string, string> } | undefined} root
-		 * @param {Iterable<any> | null | undefined} entries
-		 * @returns {boolean} whether a plugin panel is present.
-		 */
-		function syncMore(root, entries) {
-			const present = hasPluginPanels(entries);
-			if (root !== undefined && root !== null && root.dataset !== undefined) {
-				root.dataset[MORE_FLAG] = present ? "true" : "false";
-			}
-			return present;
-		}
-		//#endregion
-
 		//#region plugin body
-		const inject = ["slots"];
+		const inject = [];
 
 		/** @param {any} ctx */
 		function apply(ctx) {
@@ -125,36 +48,13 @@ window.__ModuleLoader__.load({
 				document.head.appendChild(tag);
 				return () => tag.remove();
 			}, "sidebar-unify: styles");
-
-			const root = typeof document !== "undefined" ? document.documentElement : undefined;
-			if (root === undefined) return;
-
-			const sync = () => syncMore(root, readPanelEntries(ctx));
-			sync();
-
-			if (typeof ctx.slots.subscribe === "function") {
-				ctx.effect(() => ctx.slots.subscribe(PANEL_SLOT, sync), "sidebar-unify: panel roster");
-			}
-
-			// The attribute is global; clear it when the plugin unloads so the
-			// shipped More row returns immediately.
-			ctx.effect(() => () => {
-				delete root.dataset[MORE_FLAG];
-			}, "sidebar-unify: root flag");
 		}
 		//#endregion
 
 		exports.apply = apply;
 		exports.inject = inject;
 		exports.__internals = {
-			OFFICIAL_PANEL_IDS,
-			MORE_FLAG,
-			PANEL_SLOT,
-			css,
-			hasPluginPanels,
-			panelId,
-			readPanelEntries,
-			syncMore
+			css
 		};
 		return module.exports;
 	}

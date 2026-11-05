@@ -2,7 +2,7 @@
 
 ## Installed in the desktop profile
 
-- **dsh-ui-toolkit** — merged interface toolkit (sidebar, composer HUD, Git branch, model effort, view menu, conversation cost), with per-feature switches in Settings → 界面 / Interface.
+- **dsh-ui-toolkit** — merged interface toolkit (sidebar polish, sidebar entry manager, composer HUD, Git branch, model effort, view menu, conversation cost, bottom terminal), with per-feature switches in Settings → 界面 / Interface.
 - **dsh-opencode-quota** — OpenCode Go quota; intentionally kept separate.
 - **dsh-delete-session** — external plugin, not part of this workspace.
 
