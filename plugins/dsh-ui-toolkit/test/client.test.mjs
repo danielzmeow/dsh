@@ -83,7 +83,7 @@ function memoryStorage(initial) {
 }
 
 test("the merged registry exposes all interface features", () => {
-	assert.deepEqual(FEATURE_IDS, ["sidebar", "sidebarEntries", "hero", "motion", "composerHud", "gitBranch", "modelEffort", "viewMenu", "modelContext", "autoLoad", "terminal"]);
+	assert.deepEqual(FEATURE_IDS, ["sidebar", "sidebarEntries", "hero", "motion", "composerHud", "gitBranch", "modelEffort", "viewMenu", "modelContext", "autoLoad", "terminal", "autoHideScrollbars"]);
 	for (const id of FEATURE_IDS) assert.equal(DEFAULT_FLAGS[id], true);
 	assert.match(css, /uit_switch/);
 });
@@ -100,7 +100,8 @@ test("every feature creator yields a mountable module with its own inject list",
 		viewMenu: ["slots", "locale"],
 		modelContext: ["slots", "locale", "modelDirectories"],
 		autoLoad: [],
-		terminal: ["webTerminals", "shortcuts", "locale"]
+		terminal: ["webTerminals", "shortcuts", "locale"],
+		autoHideScrollbars: []
 	};
 	for (const feature of FEATURES) {
 		const module = feature.creator(requireStub);
@@ -160,7 +161,7 @@ test("the feature runner starts, stops, and restarts one feature at a time", asy
 	};
 	const runner = createFeatureRunner(ctx, requireStub);
 	runner.sync({ ...DEFAULT_FLAGS, gitBranch: false });
-	assert.equal(started.length, 10);
+	assert.equal(started.length, 11);
 	assert.equal(runner.has("gitBranch"), false);
 	assert.equal(runner.has("sidebar"), true);
 	assert.equal(runner.has("hero"), true);
@@ -170,7 +171,7 @@ test("the feature runner starts, stops, and restarts one feature at a time", asy
 	assert.equal(runner.has("sidebar"), false);
 
 	await runner.set("sidebar", true);
-	assert.equal(started.length, 11);
+	assert.equal(started.length, 12);
 	assert.equal(runner.has("sidebar"), true);
 
 	await runner.set("gitBranch", true);
@@ -233,7 +234,7 @@ test("apply installs the settings section and starts enabled features", () => {
 	assert.equal(slots[0].options.id, "ui-toolkit");
 	assert.equal(slots[0].options.order, 90);
 	assert.equal(typeof slots[0].component, "function");
-	assert.equal(plugins.length, 11);
+	assert.equal(plugins.length, 12);
 	for (const plugin of plugins) {
 		assert.match(plugin.name, /^@local\/dsh-ui-toolkit\//);
 		assert.equal(typeof plugin.apply, "function");
@@ -249,7 +250,7 @@ test("apply installs the settings section and starts enabled features", () => {
 		const children = node.children !== undefined ? node.children : node.props?.children;
 		return count + countSwitches(children);
 	};
-	assert.equal(countSwitches(tree), 11, "settings page renders one switch per feature");
+	assert.equal(countSwitches(tree), 12, "settings page renders one switch per feature");
 	assert.equal(slots[0].component({ t: (key) => key }).type, "div");
 
 	for (const cleanup of cleanups.reverse()) cleanup();

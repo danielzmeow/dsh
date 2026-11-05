@@ -1,6 +1,6 @@
 # dsh-ui-toolkit
 
-DeepSeek Harness 的合并界面插件。原来六个独立的 UI 插件加上新会话标题清理、侧边栏动画、自动加载更早和侧边栏入口管理，现在是同一个 bundle 里的十一个功能，在 **Settings → 界面 / Interface** 里逐项开关。
+DeepSeek Harness 的合并界面插件。原来六个独立的 UI 插件加上新会话标题清理、侧边栏动画、自动加载更早和侧边栏入口管理，现在是同一个 bundle 里的十二个功能，在 **Settings → 界面 / Interface** 里逐项开关。
 
 合并进来的功能：
 
@@ -17,6 +17,7 @@ DeepSeek Harness 的合并界面插件。原来六个独立的 UI 插件加上�
 | `modelContext` | 输入框状态栏的估算对话成本 | `dsh-model-context` |
 | `autoLoad` | 滚动到对话顶部时自动加载更早历史 | 新增 |
 | `terminal` | 输入框右下角的浮动 Terminal 按钮，点开后从底边展开，关闭即结束进程 | 新增 |
+| `autoHideScrollbars` | 悬停/聚焦/滚动时才显示原生滚动条 | 新增 |
 
 **没有合并**：`dsh-opencode-quota`（OpenCode Go 额度）保持独立；外部插件 `dsh-delete-session` 也不动。
 
@@ -97,6 +98,15 @@ Git 分支                                    [开]
 - **只 patch 一个内置方法**：内置 controller 的窗口保活只认右侧栏 tab 列表，`retainTabs` 又是覆盖式的。本功能在运行时给它包一层并集（合并右侧栏终端 tab 和底部终端 tab），否则底部终端会被侧栏的任意 tab 变化回收。这是唯一的内置触点，DSH 升级时需要回归；关闭功能时会还原原方法。
 
 
+### 自动隐藏滚动条
+
+- 在 `<html>` 上挂 `data-uit-autohide-scrollbars`，用 CSS 隐藏 `::-webkit-scrollbar-thumb` / `::-webkit-scrollbar-track`，只在 `:hover`、`:focus-within` 或刚滚动过的 900ms 内显示。
+- 在 document 的捕获阶段监听 `scroll`，给正在滚动的元素加 `data-uit-scrolling`，900ms 后移除。只改滚动条颜色，不改容器宽高，所以不会有布局跳动。
+- 对 conversation、左右 sidebar、dock panes 等原生 WebKit 滚动条都生效；颜色沿用 `--dsh-scrollbar-thumb` / `--dsh-scrollbar-thumb-hover`，不引入自定义色。
+- xterm 终端自己的滚动条是自绘的，不受这个规则影响。
+- 只能在 Chromium/Electron 的 `::-webkit-scrollbar` 上工作；系统级 overlay scrollbar 不受 CSS 控制。
+
+
 ## 结构
 
 ```text
@@ -106,11 +116,11 @@ dsh-ui-toolkit/
 ├── lib/
 │   ├── index.js          # Host：Git 两条 Fetch 路由（始终挂载）
 │   ├── git.js            # Git 读取/切换实现
-│   ├── client.js         # 生成物：十一个 feature factory + 开关 UI
+│   ├── client.js         # 生成物：十二个 feature factory + 开关 UI
 │   └── client.terminal.js # 生成物：懒加载的 xterm 6 + FitAddon chunk
 ├── src/
 │   ├── client.template.js
-│   └── features/*.client.js   # 十一个 feature 的 client 源码
+│   └── features/*.client.js   # 十二个 feature 的 client 源码
 ├── scripts/build-client.mjs   # 把 features 拼进 lib/client.js，并生成 xterm chunk
 ├── vendor/xterm.bundle.js     # xterm + fit 的 esbuild 产物（源）
 ├── locale/{zh,en}.json
@@ -173,7 +183,7 @@ node --test plugins/dsh-ui-toolkit/test/*.test.mjs
 
 覆盖：
 
-- 十一个 feature creator 都能产出带 `apply` / `inject` 的模块；
+- 十二个 feature creator 都能产出带 `apply` / `inject` 的模块；
 - 开关存储、损坏 JSON、未知 id 的兜底；
 - 每个开关只触发一次通知；
 - 功能 runner 的启动 / 停止 / 重启；
@@ -196,4 +206,5 @@ node --test plugins/dsh-ui-toolkit/test/*.test.mjs
 - **按钮位置是自适应的**：右侧空间足够时贴输入框右下角，不足时进 header；窗口或右侧栏宽度跨过阈值时按钮会切换位置。
 - **底部终端不是右侧栏终端的替代**：两者各自独立，不共享进程；底部没有多标签、shell 选择器和 web-links addon。
 - **不持久化**：打开状态、终端内容和高度都不跨刷新/会话保存；关闭即 kill。
+- **滚动条功能依赖 WebKit 伪元素**：只在 Chromium/Electron 的 `::-webkit-scrollbar` 上生效；原生 overlay scrollbar 和 xterm 自绘滚动条不受影响。
 - **终端权限**：用户终端以操作系统用户权限运行，不经过 Agent 的 sandbox 或审批；不要把不可信命令粘进去。

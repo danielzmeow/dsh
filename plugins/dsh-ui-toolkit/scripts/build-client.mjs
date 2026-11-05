@@ -24,7 +24,8 @@ const specs = [
   { file: "hero.client.js", name: "createHeroCleanup" },
   { file: "motion.client.js", name: "createSidebarMotion" },
   { file: "auto-load.client.js", name: "createAutoLoadEarlier" },
-  { file: "terminal.client.js", name: "createTerminalPanelFeature" }
+  { file: "terminal.client.js", name: "createTerminalPanelFeature" },
+  { file: "auto-hide-scrollbar.client.js", name: "createAutoHideScrollbars" }
 ];
 
 const FACTORY_MARKERS = ["factory: (require) => {", "factory: () => {"];

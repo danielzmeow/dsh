@@ -37,7 +37,8 @@ window.__ModuleLoader__.load({
 			Object.freeze({ id: "viewMenu", creator: createViewMenu, titleKey: "feature.viewMenu.title", hintKey: "feature.viewMenu.hint" }),
 			Object.freeze({ id: "modelContext", creator: createModelContext, titleKey: "feature.modelContext.title", hintKey: "feature.modelContext.hint" }),
 			Object.freeze({ id: "autoLoad", creator: createAutoLoadEarlier, titleKey: "feature.autoLoad.title", hintKey: "feature.autoLoad.hint" }),
-			Object.freeze({ id: "terminal", creator: createTerminalPanelFeature, titleKey: "feature.terminal.title", hintKey: "feature.terminal.hint" })
+			Object.freeze({ id: "terminal", creator: createTerminalPanelFeature, titleKey: "feature.terminal.title", hintKey: "feature.terminal.hint" }),
+			Object.freeze({ id: "autoHideScrollbars", creator: createAutoHideScrollbars, titleKey: "feature.autoHideScrollbars.title", hintKey: "feature.autoHideScrollbars.hint" })
 		]);
 		const FEATURE_IDS = FEATURES.map((feature) => feature.id);
 		const FEATURE_BY_ID = new Map(FEATURES.map((feature) => [feature.id, feature]));
@@ -78,7 +79,9 @@ window.__ModuleLoader__.load({
 			"feature.autoLoad.title": "自动加载更早",
 			"feature.autoLoad.hint": "接近对话顶部时自动加载更早历史，不用再点「加载更早」",
 			"feature.terminal.title": "底部终端",
-			"feature.terminal.hint": "右下角浮动的 Terminal 按钮，点开后从底边展开；关闭即结束进程（⌘⇧` / Ctrl+Shift+`）"
+			"feature.terminal.hint": "右下角浮动的 Terminal 按钮，点开后从底边展开；关闭即结束进程（⌘⇧` / Ctrl+Shift+`）",
+			"feature.autoHideScrollbars.title": "自动隐藏滚动条",
+			"feature.autoHideScrollbars.hint": "只在悬停、聚焦或滚动时显示滚动条，静止后自动淡出"
 		};
 		const en = {
 			"title": "Interface",
@@ -111,7 +114,9 @@ window.__ModuleLoader__.load({
 			"feature.autoLoad.title": "Auto-load earlier",
 			"feature.autoLoad.hint": "Load earlier history automatically as the conversation nears the top",
 			"feature.terminal.title": "Bottom terminal",
-			"feature.terminal.hint": "A floating Terminal button at the bottom-right that expands from the bottom edge; closing ends the process (⌘⇧` / Ctrl+Shift+`)"
+			"feature.terminal.hint": "A floating Terminal button at the bottom-right that expands from the bottom edge; closing ends the process (⌘⇧` / Ctrl+Shift+`)",
+			"feature.autoHideScrollbars.title": "Auto-hide scrollbars",
+			"feature.autoHideScrollbars.hint": "Show scrollbars only while hovering, focused, or scrolling; fade them out when idle"
 		};
 		//#endregion
 

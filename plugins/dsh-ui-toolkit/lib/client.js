@@ -4127,6 +4127,79 @@ window.__ModuleLoader__.load({
 		exports.inject = inject;
 		return module.exports;
 		}
+
+		// feature: auto-hide-scrollbar.client.js
+		function createAutoHideScrollbars(require) {
+		var module = { exports: {} };
+		var exports = module.exports;
+
+		//#region auto-hide scrollbars
+		/** Marker on <html> that enables the rules while the feature runs. */
+		const ROOT_ATTR = "data-uit-autohide-scrollbars";
+		/** Marker put on a scroll container while its thumb should stay visible. */
+		const SCROLL_ATTR = "data-uit-scrolling";
+		const CSS_ID = "ui-toolkit-autohide-scrollbar";
+		/** How long the thumb stays visible after a scroll event settles. */
+		const VISIBLE_MS = 900;
+
+		const css = [
+			"html[data-uit-autohide-scrollbars] :not(:hover):not(:focus-within):not([data-uit-scrolling])::-webkit-scrollbar-thumb{background-color:transparent!important;background-image:none!important}",
+			"html[data-uit-autohide-scrollbars] :not(:hover):not(:focus-within):not([data-uit-scrolling])::-webkit-scrollbar-track{background-color:transparent!important;background-image:none!important}",
+			"html[data-uit-autohide-scrollbars] ::-webkit-scrollbar-thumb{transition:background-color .18s ease}"
+		].join("");
+
+		const inject = [];
+
+		/** @param {any} ctx */
+		function apply(ctx) {
+			if (
+				typeof document === "undefined" ||
+				document.documentElement === undefined ||
+				document.documentElement === null ||
+				typeof document.documentElement.setAttribute !== "function" ||
+				typeof document.addEventListener !== "function"
+			) {
+				return;
+			}
+			ctx.effect(() => {
+				const tag = document.createElement("style");
+				tag.dataset.plugin = "@local/dsh-ui-toolkit";
+				tag.dataset.pluginCss = CSS_ID;
+				tag.textContent = css;
+				document.head.appendChild(tag);
+				document.documentElement.setAttribute(ROOT_ATTR, "");
+
+				/** @type {WeakMap<Element, ReturnType<typeof setTimeout>>} */
+				const timers = new WeakMap();
+				const onScroll = (event) => {
+					const target = event.target;
+					const node = typeof Element !== "undefined" && target instanceof Element ? target : document.documentElement;
+					if (!node.hasAttribute(SCROLL_ATTR)) node.setAttribute(SCROLL_ATTR, "");
+					const previous = timers.get(node);
+					if (previous !== undefined) clearTimeout(previous);
+					timers.set(
+						node,
+						setTimeout(() => {
+							node.removeAttribute(SCROLL_ATTR);
+							timers.delete(node);
+						}, VISIBLE_MS)
+					);
+				};
+				document.addEventListener("scroll", onScroll, true);
+
+				return () => {
+					document.removeEventListener("scroll", onScroll, true);
+					document.documentElement.removeAttribute(ROOT_ATTR);
+					for (const node of document.querySelectorAll("[" + SCROLL_ATTR + "]")) node.removeAttribute(SCROLL_ATTR);
+					tag.remove();
+				};
+			}, "ui-toolkit: auto-hide scrollbars");
+		}
+
+		exports.apply = apply;
+		exports.inject = inject;
+		return module.exports;
+		}
 		//#endregion
 
 		//#region feature registry
@@ -4145,7 +4218,8 @@ window.__ModuleLoader__.load({
 			Object.freeze({ id: "viewMenu", creator: createViewMenu, titleKey: "feature.viewMenu.title", hintKey: "feature.viewMenu.hint" }),
 			Object.freeze({ id: "modelContext", creator: createModelContext, titleKey: "feature.modelContext.title", hintKey: "feature.modelContext.hint" }),
 			Object.freeze({ id: "autoLoad", creator: createAutoLoadEarlier, titleKey: "feature.autoLoad.title", hintKey: "feature.autoLoad.hint" }),
-			Object.freeze({ id: "terminal", creator: createTerminalPanelFeature, titleKey: "feature.terminal.title", hintKey: "feature.terminal.hint" })
+			Object.freeze({ id: "terminal", creator: createTerminalPanelFeature, titleKey: "feature.terminal.title", hintKey: "feature.terminal.hint" }),
+			Object.freeze({ id: "autoHideScrollbars", creator: createAutoHideScrollbars, titleKey: "feature.autoHideScrollbars.title", hintKey: "feature.autoHideScrollbars.hint" })
 		]);
 		const FEATURE_IDS = FEATURES.map((feature) => feature.id);
 		const FEATURE_BY_ID = new Map(FEATURES.map((feature) => [feature.id, feature]));
@@ -4186,7 +4260,9 @@ window.__ModuleLoader__.load({
 			"feature.autoLoad.title": "自动加载更早",
 			"feature.autoLoad.hint": "接近对话顶部时自动加载更早历史，不用再点「加载更早」",
 			"feature.terminal.title": "底部终端",
-			"feature.terminal.hint": "右下角浮动的 Terminal 按钮，点开后从底边展开；关闭即结束进程（⌘⇧` / Ctrl+Shift+`）"
+			"feature.terminal.hint": "右下角浮动的 Terminal 按钮，点开后从底边展开；关闭即结束进程（⌘⇧` / Ctrl+Shift+`）",
+			"feature.autoHideScrollbars.title": "自动隐藏滚动条",
+			"feature.autoHideScrollbars.hint": "只在悬停、聚焦或滚动时显示滚动条，静止后自动淡出"
 		};
 		const en = {
 			"title": "Interface",
@@ -4219,7 +4295,9 @@ window.__ModuleLoader__.load({
 			"feature.autoLoad.title": "Auto-load earlier",
 			"feature.autoLoad.hint": "Load earlier history automatically as the conversation nears the top",
 			"feature.terminal.title": "Bottom terminal",
-			"feature.terminal.hint": "A floating Terminal button at the bottom-right that expands from the bottom edge; closing ends the process (⌘⇧` / Ctrl+Shift+`)"
+			"feature.terminal.hint": "A floating Terminal button at the bottom-right that expands from the bottom edge; closing ends the process (⌘⇧` / Ctrl+Shift+`)",
+			"feature.autoHideScrollbars.title": "Auto-hide scrollbars",
+			"feature.autoHideScrollbars.hint": "Show scrollbars only while hovering, focused, or scrolling; fade them out when idle"
 		};
 		//#endregion
 
