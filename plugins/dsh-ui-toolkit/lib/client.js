@@ -3468,11 +3468,12 @@ window.__ModuleLoader__.load({
 						const cardRect = card.getBoundingClientRect();
 						const width = pill.offsetWidth === 0 ? 92 : pill.offsetWidth;
 						const gutter = Math.round(centerRect.right - cardRect.right);
-						if (gutter >= width + 6) {
+						const inset = Math.max(0, Math.round(centerRect.bottom - cardRect.bottom));
+						if (gutter >= width + inset) {
 							if (pill.parentElement !== centerEl) centerEl.appendChild(pill);
 							pill.dataset.placement = "dock";
-							pill.style.right = "0px";
-							pill.style.bottom = Math.round(centerRect.bottom - cardRect.bottom) + "px";
+							pill.style.right = inset + "px";
+							pill.style.bottom = inset + "px";
 							return;
 						}
 					}
