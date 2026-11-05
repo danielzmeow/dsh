@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "OpenCode 额度",
+    "description": "在左侧边栏底部、设置上方显示 OpenCode Go 的剩余额度；点击可查看 5 小时、本周、本月三个窗口的用量与重置时间。"
+  }
+}

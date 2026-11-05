@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Sidebar polish",
+    "description": "Renders New Session as a regular sidebar row, removes the brand mark, and hides More when no plugin adds a sidebar entry."
+  }
+}

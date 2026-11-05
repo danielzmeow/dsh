@@ -1,0 +1,5 @@
+# Mount the sidebar polish row as a profile bundle row.
+# The bundle layer owns this row so the Plugins page can toggle it.
+- insert:
+    - id: sidebar-unify
+      name: '@local/dsh-sidebar-unify'

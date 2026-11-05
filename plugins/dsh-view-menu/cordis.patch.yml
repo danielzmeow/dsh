@@ -1,0 +1,5 @@
+# Mount the View menu fold as a profile bundle row.
+# The bundle layer owns this row so the Plugins page can toggle it.
+- insert:
+    - id: view-menu
+      name: '@local/dsh-view-menu'

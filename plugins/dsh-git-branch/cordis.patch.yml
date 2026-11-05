@@ -1,0 +1,5 @@
+# Mount the Git branch control as a profile bundle row.
+# The bundle layer owns this row so the Plugins page can toggle it.
+- insert:
+    - id: git-branch
+      name: '@local/dsh-git-branch'

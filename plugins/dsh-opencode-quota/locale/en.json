@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "OpenCode quota",
+    "description": "Remaining OpenCode Go quota in the sidebar footer above Settings, clickable for the 5-hour, weekly, and monthly windows."
+  }
+}

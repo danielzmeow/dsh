@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "会话视图菜单",
+    "description": "把 Chat、Trajectory 等会话视图标签收进右上角的三个点菜单，给正文留出完整的一行。"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Git branch",
+    "description": "Show the current Git branch in the composer and switch local branches from a searchable list, with dirty and ahead/behind hints."
+  }
+}

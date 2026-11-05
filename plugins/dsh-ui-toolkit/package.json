@@ -1,0 +1,50 @@
+{
+  "name": "@local/dsh-ui-toolkit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "One switchable interface toolkit: sidebar polish, hero Preview badge cleanup, sidebar motion, auto-load earlier history, composer HUD, Git branch switcher, model effort slider, view menu, and conversation cost",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "lib/",
+    "src/",
+    "scripts/",
+    "docs/",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build-client.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "ui",
+    "sidebar",
+    "composer",
+    "git"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Composer HUD",
+    "description": "Compact context and token readings inside the composer tool row, clickable for context composition, cache hit, and session stats; hides the duplicated stats row below the composer."
+  }
+}

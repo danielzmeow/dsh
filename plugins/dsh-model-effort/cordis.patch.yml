@@ -1,0 +1,5 @@
+# Mount the model effort slider as a profile bundle row.
+# The bundle layer owns this row so the Plugins page can toggle it.
+- insert:
+    - id: model-effort
+      name: '@local/dsh-model-effort'

@@ -1,0 +1,6 @@
+# Mount the merged UI toolkit as one profile bundle row.
+# Every interface feature lives in this row; the settings page switches them
+# individually at runtime.
+- insert:
+    - id: ui-toolkit
+      name: '@local/dsh-ui-toolkit'

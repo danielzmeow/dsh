@@ -1,0 +1,5 @@
+# Mount the composer HUD as a profile bundle row.
+# The bundle layer owns this row so the Plugins page can toggle it.
+- insert:
+    - id: composer-hud
+      name: '@local/dsh-composer-hud'

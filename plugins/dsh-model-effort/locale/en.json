@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Model & effort slider",
+    "description": "A Codex-style draggable reasoning-effort slider inside the model picker; the model list and slider share one panel and apply on release."
+  }
+}

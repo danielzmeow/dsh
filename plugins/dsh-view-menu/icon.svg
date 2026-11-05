@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-label="Conversation views">
+  <rect x="1.25" y="1.25" width="13.5" height="13.5" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.55"/>
+  <circle cx="4.6" cy="8" r="1" fill="currentColor"/>
+  <circle cx="8" cy="8" r="1" fill="currentColor"/>
+  <circle cx="11.4" cy="8" r="1" fill="currentColor"/>
+</svg>

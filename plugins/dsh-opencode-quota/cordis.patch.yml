@@ -1,0 +1,5 @@
+# Mount the OpenCode quota reading as a profile bundle row.
+# The bundle layer owns this row so the Plugins page can toggle it.
+- insert:
+    - id: opencode-quota
+      name: '@local/dsh-opencode-quota'
