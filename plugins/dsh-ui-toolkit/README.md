@@ -13,7 +13,7 @@ DeepSeek Harness 的合并界面插件。原来六个独立的 UI 插件加上�
 | `composerHud` | 输入框状态环：上下文占用 + 用量明细面板 | `dsh-composer-hud` |
 | `gitBranch` | 输入框左侧的 Git 分支，可搜索切换 | `dsh-git-branch` |
 | `modelEffort` | 模型选择 + 可拖动 reasoning effort 滑块 | `dsh-model-effort` |
-| `viewMenu` | Chat / Trajectory 标签折叠进右上角 ⋯ 菜单 | `dsh-view-menu` |
+| `viewMenu` | Chat / Trajectory 合并进右上角原生 ⋯ 菜单 | `dsh-view-menu` |
 | `modelContext` | 输入框状态栏的估算对话成本 | `dsh-model-context` |
 | `autoLoad` | 滚动到对话顶部时自动加载更早历史 | 新增 |
 | `terminal` | 输入框右下角的浮动 Terminal 按钮，点开后从底边展开，关闭即结束进程 | 新增 |
@@ -120,6 +120,7 @@ dsh-ui-toolkit/
 │   └── client.terminal.js # 生成物：懒加载的 xterm 6 + FitAddon chunk
 ├── src/
 │   ├── client.template.js
+│   ├── local-primitives.js    # 0.2.2 的本地 primitives shim
 │   └── features/*.client.js   # 十二个 feature 的 client 源码
 ├── scripts/build-client.mjs   # 把 features 拼进 lib/client.js，并生成 xterm chunk
 ├── vendor/xterm.bundle.js     # xterm + fit 的 esbuild 产物（源）
@@ -162,6 +163,14 @@ npx esbuild entry.js --bundle --minify --format=iife \
 
 Host 的 Git 路由是始终挂载的：Git 功能关掉时只是没有客户端入口，路由不会被访问，也就不影响插件热切换。
 
+### DSH 0.2.2 兼容性
+
+- **不再依赖 runtime 的 primitives 包**：0.2.2 把 `@deepseek-ai/dsh-client-ui-primitives` 收成了各家 client bundle 的 devDependency，运行期模块表里没有它。`src/local-primitives.js` 提供 Tooltip、MenuSurface、锚点定位、外部点击关闭和用到的图标；`client.template.js` 把旧 require 说明符路由到这份本地实现。`dsh.client.inject` 只保留 locale 和 context-menu 两个真实存在的 client 包。
+- **侧边栏 New Session**：0.2.2 把按钮包进了 `div.newSessionRow`，`sidebar-unify` 改成匹配该包裹层内的 `button.newSession`，几何仍与面板行对齐。
+- **侧边栏入口**：面板行外面多了 `div.panelEntry`（pin/unpin 座位），`sidebar-entries` 会自动找到行按钮的直接 nav 子节点，把顺序/显隐标记打在包裹层上；More 的隐藏也覆盖了新的 `moreAnchor` 包装。
+- **视图菜单并入原生三点菜单**：不再注册自己的触发器，而是通过 `ctx.contextMenus.register` 向 `sessionHeader` 菜单贡献 Chat / Trajectory；当前视图带勾，点击仍走隐藏 tab 的原生选择路径。Copy / Download / Feedback 等原生项保持不动，也不重复添加下载。
+- **模型选择器**：`modelEffort` 仍保留原有行为，只做了加载层兼容；它的选择逻辑没有跟随 0.2.2 的新模型目录重写。需要时单独处理。
+
 ## 安装
 
 本目录是标准 profile bundle。已经链接进 desktop profile 时，刷新页面（或重启 DSH）后生效。
@@ -184,6 +193,9 @@ node --test plugins/dsh-ui-toolkit/test/*.test.mjs
 覆盖：
 
 - 十二个 feature creator 都能产出带 `apply` / `inject` 的模块；
+- 旧的 primitives require 说明符被路由到本地 shim，且 shim 暴露全部所需原子；
+- 0.2.2 的 `panelEntry` 包裹行能被识别并映射到进入管理器的 id；
+- 视图菜单向原生 `sessionHeader` 菜单贡献带勾选状态的 Chat / Trajectory；
 - 开关存储、损坏 JSON、未知 id 的兜底；
 - 每个开关只触发一次通知；
 - 功能 runner 的启动 / 停止 / 重启；
@@ -197,7 +209,7 @@ node --test plugins/dsh-ui-toolkit/test/*.test.mjs
 
 - **开关和入口配置是浏览器本地状态**：换浏览器、清 localStorage / cookie 会回到默认。要跨设备同步需要 Host 侧配置，当前没有做。
 - **合并后只有一个 bundle 开关**：在 Plugins 页关掉 `dsh-ui-toolkit` 会关掉全部功能；只想关某一个请用 Settings → 界面。
-- **入口管理是 DOM 层适配**：依赖 `nav[class*="panelList"]`、行按钮的 `aria-label` 和 `panelRow` 结构。DSH 大版本改这些名字时需要同步 `src/features/sidebar-entries.client.js`。
+- **入口管理是 DOM 层适配**：依赖 `nav[class*="panelList"]`、行按钮的 `aria-label`、`panelRow` 和 0.2.2 的 `panelEntry` 包裹层。DSH 大版本改这些名字时需要同步 `src/features/sidebar-entries.client.js`。
 - **隐藏不等于卸载**：被关掉的入口仍然注册在 slot 里，主面板和选择状态不变；当前选中的面板被隐藏后，主区域不会自动切走。
 - **Git 路由始终存在**：功能关闭时路由仍注册在 Host 上，只是客户端不调用。
 - **依赖原插件的 slot 名和 DOM 结构**：侧边栏、输入框、模型选择等 slot 由 DSH 提供；DSH 大版本改 slot 名时需要同步 `src/features` 里的代码。

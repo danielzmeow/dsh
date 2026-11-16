@@ -17,6 +17,7 @@ function Dummy() {
 }
 const React = {
 	createElement: (type, props, ...children) => ({ type, props, children }),
+	cloneElement: (element, props) => ({ ...element, props: { ...(element.props ?? {}), ...props } }),
 	Fragment: "fragment",
 	Component: class {
 		constructor(props) {
@@ -41,24 +42,26 @@ const jsxRuntime = {
 	jsxs: (type, props) => ({ type, props }),
 	Fragment: "fragment"
 };
-const primitives = new Proxy(
-	{ isDarwinDesktop: () => false, Menu: Dummy, Tooltip: ({ children }) => children, ShortcutKeys: Dummy },
-	{
-		get(target, property) {
-			if (property in target) return target[property];
-			return Dummy;
-		}
-	}
-);
+// DSH 0.2.2 removed the primitives runtime module. The bundle must route the
+// old specifier to its local shim, so the raw specifier intentionally fails.
 const requireStub = (id) => {
 	if (id === "react") return React;
 	if (id === "react-dom") return { createPortal: (node) => node };
 	if (id === "react/jsx-runtime") return jsxRuntime;
-	if (id === "@deepseek-ai/dsh-client-ui-primitives") return primitives;
+	if (id === "@deepseek-ai/dsh-client-ui-primitives") {
+		throw new Error("client-modules: require(\"@deepseek-ai/dsh-client-ui-primitives\") missed the module table");
+	}
 	throw new Error("unexpected require: " + id);
 };
 
+const asyncRequests = [];
+requireStub.async = async (spec) => {
+	asyncRequests.push(spec);
+	return { Terminal: function Terminal() {}, FitAddon: function FitAddon() {}, css: "" };
+};
+
 const mod = captured[0].factory(requireStub);
+const toolkitRequire = mod.__internals.toolkitRequire;
 const {
 	FEATURES,
 	FEATURE_IDS,
@@ -88,6 +91,31 @@ test("the merged registry exposes all interface features", () => {
 	assert.match(css, /uit_switch/);
 });
 
+test("the bundle routes the removed primitives package to its local shim", () => {
+	assert.throws(() => requireStub("@deepseek-ai/dsh-client-ui-primitives"), /missed the module table/);
+	const primitives = toolkitRequire("@deepseek-ai/dsh-client-ui-primitives");
+	for (const name of ["Tooltip", "MenuSurface", "useAnchoredPosition", "useDismissOnOutsidePointer"]) {
+		assert.equal(typeof primitives[name], "function", name + " is provided locally");
+	}
+	for (const name of ["IconBranchOutline16", "IconCheckOutlineRegular", "IconChevronDownOutline14", "IconEllipsisOutlineRegular", "IconDownloadOutline16", "IconDataOutlineRegular"]) {
+		assert.equal(typeof primitives[name], "function", name + " has a local glyph");
+	}
+});
+
+test("the toolkit require keeps the loader's async chunk accessor", async () => {
+	assert.equal(typeof toolkitRequire.async, "function");
+	const loaded = await toolkitRequire.async("./client.terminal.js");
+	assert.deepEqual(asyncRequests, ["./client.terminal.js"]);
+	assert.equal(typeof loaded.Terminal, "function");
+});
+
+test("the terminal feature lazily loads xterm through the loader bridge", async () => {
+	const terminal = FEATURES.find((feature) => feature.id === "terminal").creator(toolkitRequire);
+	const lib = await terminal.__internals.loadXterm();
+	assert.equal(typeof lib.Terminal, "function");
+	assert.equal(asyncRequests.at(-1), "./client.terminal.js");
+});
+
 test("every feature creator yields a mountable module with its own inject list", () => {
 	const expected = {
 		sidebar: [],
@@ -97,14 +125,14 @@ test("every feature creator yields a mountable module with its own inject list",
 		composerHud: ["slots", "locale"],
 		gitBranch: ["slots", "locale"],
 		modelEffort: ["slots", "modelDirectories", "sessions", "remote", "remote.session"],
-		viewMenu: ["slots", "locale"],
+		viewMenu: ["slots", "locale", "contextMenus"],
 		modelContext: ["slots", "locale", "modelDirectories"],
 		autoLoad: [],
 		terminal: ["webTerminals", "shortcuts", "locale"],
 		autoHideScrollbars: []
 	};
 	for (const feature of FEATURES) {
-		const module = feature.creator(requireStub);
+		const module = feature.creator(toolkitRequire);
 		assert.equal(typeof module.apply, "function", feature.id + " has apply");
 		assert.deepEqual(module.inject, expected[feature.id], feature.id + " inject list");
 	}
@@ -159,7 +187,7 @@ test("the feature runner starts, stops, and restarts one feature at a time", asy
 			};
 		}
 	};
-	const runner = createFeatureRunner(ctx, requireStub);
+	const runner = createFeatureRunner(ctx, toolkitRequire);
 	runner.sync({ ...DEFAULT_FLAGS, gitBranch: false });
 	assert.equal(started.length, 11);
 	assert.equal(runner.has("gitBranch"), false);
@@ -315,7 +343,7 @@ test("the runner falls back to a scoped facade when ctx.plugin is withheld", asy
 		documentElement: { dataset: {} }
 	};
 	try {
-		const runner = createFeatureRunner(dynamic, requireStub);
+		const runner = createFeatureRunner(dynamic, toolkitRequire);
 		runner.sync(DEFAULT_FLAGS);
 		assert.equal(runner.has("sidebar"), true);
 		assert.equal(runner.has("modelEffort"), true);
@@ -365,8 +393,8 @@ test("preference storage prefers the host-scoped cookie", () => {
 
 
 test("hero and motion sheets target the hero badge and both sidebars", () => {
-	const hero = FEATURES.find((feature) => feature.id === "hero").creator(requireStub);
-	const motion = FEATURES.find((feature) => feature.id === "motion").creator(requireStub);
+	const hero = FEATURES.find((feature) => feature.id === "hero").creator(toolkitRequire);
+	const motion = FEATURES.find((feature) => feature.id === "motion").creator(toolkitRequire);
 	assert.match(hero.__internals.css, /previewBadge/);
 	assert.match(hero.__internals.css, /titleGroup/);
 	assert.match(motion.__internals.css, /data-sidebar-right-panel/);
@@ -377,7 +405,7 @@ test("hero and motion sheets target the hero badge and both sidebars", () => {
 
 test("auto-load clicks once per approach and waits for the native anchor to settle", () => {
 	const feature = FEATURES.find((item) => item.id === "autoLoad");
-	const module = feature.creator(requireStub);
+	const module = feature.creator(toolkitRequire);
 	const { findLoadEarlierButton, isScrollTarget, triggerPx, createAutoLoader, css } = module.__internals;
 	assert.match(css, /_older/);
 
@@ -462,7 +490,7 @@ test("auto-load clicks once per approach and waits for the native anchor to sett
 
 test("auto-load captures its own stable anchor and restores it after a fast scroll", () => {
 	const feature = FEATURES.find((item) => item.id === "autoLoad");
-	const module = feature.creator(requireStub);
+	const module = feature.creator(toolkitRequire);
 	const { findAnchor, restoreAnchor } = module.__internals;
 
 	const viewport = { top: 0, bottom: 700 };
@@ -554,7 +582,7 @@ test("the sidebar entry store orders, hides, and persists panels", () => {
 });
 
 test("sidebar panel rows map by label before falling back to position", () => {
-	const feature = FEATURES.find((item) => item.id === "sidebarEntries").creator(requireStub);
+	const feature = FEATURES.find((item) => item.id === "sidebarEntries").creator(toolkitRequire);
 	const { mapRows, isPanelRow } = feature.__internals;
 	const makeRow = (label, hasPopup) => ({
 		tagName: "BUTTON",
@@ -586,6 +614,44 @@ test("sidebar panel rows map by label before falling back to position", () => {
 	assert.equal(isPanelRow(makeRow("Plugins")), true);
 	assert.equal(isPanelRow(makeRow("More", "menu")), false, "More is not a panel row");
 	assert.equal(isPanelRow({ tagName: "DIV" }), false);
+});
+
+test("the view menu contributes checked View actions to the native header menu", () => {
+	const feature = FEATURES.find((item) => item.id === "viewMenu");
+	const module = feature.creator(toolkitRequire);
+	const actions = module.__internals.buildViewActions(
+		[{ id: "chat", label: "Chat" }, { id: "trajectory", label: "Trajectory" }, { id: "missing", label: "Missing" }],
+		{ labels: new Set(["Chat", "Trajectory"]), active: "Trajectory" },
+		(key) => key
+	);
+	assert.deepEqual(actions.map((action) => ({ id: action.id, label: action.label, icon: action.icon.key })), [
+		{ id: "view-chat", label: "Chat", icon: "view-menu.blank" },
+		{ id: "view-trajectory", label: "Trajectory", icon: "view-menu.check" }
+	]);
+	assert.ok(actions.every((action) => typeof action.run === "function"));
+});
+
+test("panel rows are found inside 0.2.2's per-row wrapper", () => {
+	const feature = FEATURES.find((item) => item.id === "sidebarEntries").creator(toolkitRequire);
+	const { collectRows, rowHost } = feature.__internals;
+	const nav = { children: [] };
+	const makeButton = (label) => ({ tagName: "BUTTON", getAttribute: (name) => (name === "aria-label" ? label : null) });
+	const plugins = makeButton("Plugins");
+	const schedules = makeButton("Automation tasks");
+	const pluginsHost = { parentElement: nav, button: plugins };
+	const schedulesHost = { parentElement: nav, button: schedules };
+	plugins.parentElement = pluginsHost;
+	schedules.parentElement = schedulesHost;
+	nav.children = [pluginsHost, schedulesHost];
+	nav.querySelectorAll = (selector) => selector.includes("panelRow") ? [plugins, schedules] : [];
+	assert.equal(rowHost(nav, plugins), pluginsHost);
+	assert.deepEqual(collectRows(nav).map((row) => row.button.getAttribute("aria-label")), ["Plugins", "Automation tasks"]);
+	assert.deepEqual(collectRows(nav).map((row) => row.host), [pluginsHost, schedulesHost]);
+
+	const legacy = makeButton("Plugins");
+	legacy.parentElement = nav;
+	const legacyNav = { children: [legacy], querySelectorAll: () => [] };
+	assert.deepEqual(collectRows(legacyNav), [{ button: legacy, host: legacy }]);
 });
 
 test("the settings manager renders one row per live panel and applies order clicks", () => {

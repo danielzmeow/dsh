@@ -105,7 +105,7 @@ Host 端：
 ## 实现说明
 
 - 走 `sidebar.footer.action` 槽，`id: opencode-quota`、`order: 1`，排在 Settings 之前；宽侧边栏显示整行，收起成 rail 时由 CSS 改成 36px 图标按钮。
-- 面板用 `@deepseek-ai/dsh-client-ui-primitives` 的 `useAnchoredPosition` 与 `useDismissOnOutsidePointer`，经 `react-dom` 的 `createPortal` 挂到 `document.body`。
+- 面板的锚点定位与外部点击关闭由 `lib/client.js` 内的本地 fallback 提供（DSH 0.2.2 不再把 `@deepseek-ai/dsh-client-ui-primitives` 暴露给运行期 client bundle），经 `react-dom` 的 `createPortal` 挂到 `document.body`。
 - 无障碍：触发按钮带 `aria-haspopup` / `aria-expanded` / 完整 `aria-label`；每个窗口的进度条是 `role="meter"` 并带 `aria-valuenow` / `aria-valuetext`；跌破阈值时通过 `aria-live="polite"` 播报一次，不在每次轮询时重复。
 - 样式复用状态栏 pill 与内置详情面板的 `--dsw-alias-*` token，不引入自定义配色；浅色/深色主题自动跟随。
 - 没有 Host 服务、工具、prompt 或设置项；`lib/index.js` 只注册一个只读端点。

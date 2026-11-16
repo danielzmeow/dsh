@@ -6,6 +6,22 @@ window.__ModuleLoader__.load({
 		const React = require("react");
 		const h = React.createElement;
 
+		//#region local UI primitives
+/* @@PRIMITIVES@@ */
+		/**
+		 * DSH 0.2.2 no longer exposes @deepseek-ai/dsh-client-ui-primitives to
+		 * runtime client bundles. Route that specifier at the local shim so the
+		 * features built against it keep loading; every other specifier continues
+		 * through the loader's module table unchanged.
+		 */
+		const toolkitPrimitives = createLocalPrimitives(React, h, require);
+		const toolkitRequire = (id) => id === "@deepseek-ai/dsh-client-ui-primitives" ? toolkitPrimitives : require(id);
+		// The terminal feature lazy-loads its xterm chunk through require.async;
+		// a plain wrapper function would drop the loader's non-call properties.
+		toolkitRequire.async = typeof require.async === "function" ? require.async : undefined;
+		toolkitRequire.asset = typeof require.asset === "function" ? require.asset : undefined;
+		//#endregion
+
 		//#region vendored xterm
 /* @@VENDOR@@ */
 		//#endregion
@@ -737,6 +753,8 @@ window.__ModuleLoader__.load({
 		let activeStore = null;
 		let activeRunner = null;
 		let activeEntryStore = null;
+		/** Locale-bound translator, used when a section is rendered without props.t. */
+		let activeTranslate = null;
 		/** Stable empty snapshot so the section renders before apply() wires the store. */
 		const EMPTY_ENTRY_SNAPSHOT = Object.freeze({ entries: Object.freeze([]), hidden: Object.freeze([]) });
 		const EMPTY_ENTRY_STORE = Object.freeze({
@@ -837,7 +855,9 @@ window.__ModuleLoader__.load({
 		}
 
 		function UIToolkitSection(props) {
-			const t = props !== null && props !== undefined && typeof props.t === "function" ? props.t : (key) => key;
+			const t = props !== null && props !== undefined && typeof props.t === "function"
+				? props.t
+				: (activeTranslate === null ? (key) => key : activeTranslate);
 			if (activeStore === null) return null;
 			const flags = useStoreSnapshot(activeStore.subscribe, activeStore.getSnapshot);
 			const entryStore = activeEntryStore ?? EMPTY_ENTRY_STORE;
@@ -899,11 +919,12 @@ window.__ModuleLoader__.load({
 				locale: ctx.locale,
 				storage: createPreferenceStorage(ENTRY_COOKIE_NAME)
 			});
-			const runner = createFeatureRunner(ctx, require);
+			const runner = createFeatureRunner(ctx, toolkitRequire);
 			sidebarEntriesHost = entryStore;
 			activeStore = store;
 			activeRunner = runner;
 			activeEntryStore = entryStore;
+			activeTranslate = translate;
 			ctx.effect(() => entryStore.start(), "ui-toolkit: sidebar entry catalog");
 			runner.sync(store.read());
 
@@ -919,6 +940,7 @@ window.__ModuleLoader__.load({
 				activeRunner = null;
 				activeStore = null;
 				activeEntryStore = null;
+				activeTranslate = null;
 				sidebarEntriesHost = null;
 			}, "ui-toolkit: settings state");
 		}
@@ -929,6 +951,8 @@ window.__ModuleLoader__.load({
 		exports.UIToolkitSection = UIToolkitSection;
 		exports.SidebarEntriesManager = SidebarEntriesManager;
 		exports.__internals = {
+			toolkitRequire,
+			toolkitPrimitives,
 			FEATURES,
 			FEATURE_IDS,
 			DEFAULT_FLAGS,

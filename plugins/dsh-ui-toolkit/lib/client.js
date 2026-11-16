@@ -6,6 +6,355 @@ window.__ModuleLoader__.load({
 		const React = require("react");
 		const h = React.createElement;
 
+		//#region local UI primitives
+
+	/**
+	 * Local stand-ins for the UI atoms the merged features were built against.
+	 *
+	 * DSH 0.2.2 stopped shipping \`@deepseek-ai/dsh-client-ui-primitives\` as a
+	 * runtime client module: it is now a build-time devDependency that every
+	 * shipped client bundle inlines. The loader's require table therefore has
+	 * no entry for it, so requiring it throws while the feature creators run.
+	 * These implementations cover exactly the surface the toolkit uses
+	 * (tooltip, menu surface, anchored position, outside dismissal, and the
+	 * icons the features resolve by name) so the bundle stays self-contained.
+	 *
+	 * The API shape mirrors @deepseek-ai/dsh-client-ui-primitives 0.2.2-rc.3
+	 * (MIT); the code below is an independent minimal implementation.
+	 */
+
+	/** Create the local primitives object for one client bundle. */
+	function createLocalPrimitives(React, h, require) {
+		let idCounter = 0;
+
+		/** Chain a React event handler ahead of ours. */
+		function chain(original, next) {
+			return function chained(event) {
+				if (typeof original === "function") original(event);
+				next(event);
+			};
+		}
+
+		/** Keep a ref current without discarding the child's own ref. */
+		function mergeRef(ref, node) {
+			if (typeof ref === "function") ref(node);
+			else if (ref !== null && typeof ref === "object") ref.current = node;
+		}
+
+		/**
+		 * Position a fixed panel above or below an anchor.
+		 * Returns null until the panel can be measured.
+		 */
+		function useAnchoredPosition(options) {
+			const open = options.open;
+			const anchorRef = options.anchorRef;
+			const panelRef = options.panelRef;
+			const side = options.side === "bottom" ? "bottom" : "top";
+			const gap = typeof options.gap === "number" ? options.gap : 8;
+			const margin = typeof options.margin === "number" ? options.margin : 12;
+			const [position, setPosition] = React.useState(null);
+
+			React.useLayoutEffect(() => {
+				if (!open) {
+					setPosition(null);
+					return undefined;
+				}
+				if (typeof window === "undefined" || typeof document === "undefined") return undefined;
+				let disposed = false;
+				let frame = 0;
+				const measure = () => {
+					frame = 0;
+					if (disposed) return;
+					const anchor = anchorRef !== null && anchorRef !== undefined ? anchorRef.current : null;
+					const panel = panelRef !== null && panelRef !== undefined ? panelRef.current : null;
+					if (anchor === null || anchor === undefined || panel === null || panel === undefined) return;
+					if (anchor.isConnected === false || panel.isConnected === false) return;
+					const anchorRect = anchor.getBoundingClientRect();
+					const panelRect = panel.getBoundingClientRect();
+					const width = panelRect.width;
+					const height = panelRect.height;
+					const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+					const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+					let left = anchorRect.left + anchorRect.width / 2 - width / 2;
+					left = Math.max(margin, Math.min(left, viewportWidth - width - margin));
+					let top = side === "top" ? anchorRect.top - height - gap : anchorRect.bottom + gap;
+					if (side === "top" && top < margin && anchorRect.bottom + gap + height <= viewportHeight - margin) {
+						top = anchorRect.bottom + gap;
+					} else if (side === "bottom" && top + height > viewportHeight - margin && anchorRect.top - height - gap >= margin) {
+						top = anchorRect.top - height - gap;
+					}
+					top = Math.max(margin, Math.min(top, viewportHeight - height - margin));
+					const next = { left: Math.round(left), top: Math.round(top) };
+					setPosition((current) => {
+						if (current !== null && current.left === next.left && current.top === next.top) return current;
+						return next;
+					});
+				};
+				const schedule = () => {
+					if (frame !== 0 || disposed) return;
+					if (typeof requestAnimationFrame === "function") frame = requestAnimationFrame(measure);
+					else measure();
+				};
+				schedule();
+				let observer = null;
+				if (typeof ResizeObserver === "function") {
+					observer = new ResizeObserver(schedule);
+					const panel = panelRef !== null && panelRef !== undefined ? panelRef.current : null;
+					if (panel !== null && panel !== undefined) observer.observe(panel);
+				}
+				window.addEventListener("resize", schedule);
+				window.addEventListener("scroll", schedule, true);
+				return () => {
+					disposed = true;
+					if (frame !== 0 && typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame);
+					if (observer !== null) observer.disconnect();
+					window.removeEventListener("resize", schedule);
+					window.removeEventListener("scroll", schedule, true);
+				};
+			}, [open, anchorRef, panelRef, side, gap, margin]);
+
+			return position;
+		}
+
+		/** Close a trigger-owned popover on an outside pointerdown. */
+		function useDismissOnOutsidePointer(root, open, setOpen, portal) {
+			React.useEffect(() => {
+				if (!open) return undefined;
+				if (typeof document === "undefined") return undefined;
+				const onPointerDown = (event) => {
+					if (!(event.target instanceof Node)) return;
+					const insideRoot = root !== null && root !== undefined && root.current !== null && root.current.contains(event.target);
+					const insidePortal = portal !== null && portal !== undefined && portal.current !== null && portal.current.contains(event.target);
+					if (!insideRoot && !insidePortal) setOpen(false);
+				};
+				document.addEventListener("pointerdown", onPointerDown);
+				return () => document.removeEventListener("pointerdown", onPointerDown);
+			}, [root, open, setOpen, portal]);
+		}
+
+		/** Hover/focus tooltip; renders a fixed bubble in a body portal. */
+		function Tooltip(props) {
+			const label = props.label;
+			const side = props.side === "bottom" ? "bottom" : "top";
+			const delayMs = typeof props.delayMs === "number" ? props.delayMs : 0;
+			const disabled = props.disabled === true;
+			const openOnClick = props.openOnClick === true;
+			const [open, setOpen] = React.useState(false);
+			const [position, setPosition] = React.useState(null);
+			const anchor = React.useRef(null);
+			const bubble = React.useRef(null);
+			const timer = React.useRef(null);
+			const id = React.useRef(null);
+			if (id.current === null) {
+				idCounter += 1;
+				id.current = "uit-tooltip-" + idCounter;
+			}
+			const clearTimer = () => {
+				if (timer.current !== null) {
+					clearTimeout(timer.current);
+					timer.current = null;
+				}
+			};
+			const show = () => {
+				if (disabled) return;
+				clearTimer();
+				if (delayMs > 0) timer.current = setTimeout(() => setOpen(true), delayMs);
+				else setOpen(true);
+			};
+			const hide = () => {
+				clearTimer();
+				setOpen(false);
+			};
+			React.useEffect(() => () => clearTimer(), []);
+			React.useEffect(() => {
+				if (disabled) hide();
+			}, [disabled]);
+			React.useLayoutEffect(() => {
+				if (!open || disabled) {
+					setPosition(null);
+					return undefined;
+				}
+				const place = () => {
+					const anchorNode = anchor.current;
+					const bubbleNode = bubble.current;
+					if (anchorNode === null || bubbleNode === null) return;
+					const anchorRect = anchorNode.getBoundingClientRect();
+					const bubbleRect = bubbleNode.getBoundingClientRect();
+					const viewportWidth = window.innerWidth || 0;
+					const viewportHeight = window.innerHeight || 0;
+					let left = anchorRect.left + anchorRect.width / 2 - bubbleRect.width / 2;
+					left = Math.max(8, Math.min(left, viewportWidth - bubbleRect.width - 8));
+					let top = side === "top" ? anchorRect.top - bubbleRect.height - 6 : anchorRect.bottom + 6;
+					if (top < 8) top = anchorRect.bottom + 6;
+					if (top + bubbleRect.height > viewportHeight - 8) top = anchorRect.top - bubbleRect.height - 6;
+					setPosition({ left: Math.round(left), top: Math.round(top) });
+				};
+				place();
+				window.addEventListener("resize", place);
+				window.addEventListener("scroll", place, true);
+				return () => {
+					window.removeEventListener("resize", place);
+					window.removeEventListener("scroll", place, true);
+				};
+			}, [open, disabled, side, label]);
+			const child = props.children;
+			if (child === null || child === undefined || typeof child !== "object") return child;
+			const childRef = child.ref;
+			const childProps = child.props !== null && child.props !== undefined ? child.props : {};
+			const anchorProps = {
+				ref: (node) => {
+					anchor.current = node;
+					mergeRef(childRef, node);
+				},
+				onMouseEnter: chain(childProps.onMouseEnter, show),
+				onMouseLeave: chain(childProps.onMouseLeave, hide),
+				onFocus: chain(childProps.onFocus, show),
+				onBlur: chain(childProps.onBlur, hide),
+				onPointerDown: chain(childProps.onPointerDown, openOnClick ? () => setOpen((value) => !value) : hide),
+				"aria-describedby": open ? id.current : undefined
+			};
+			const rendered = React.cloneElement(child, anchorProps);
+			if (!open) return rendered;
+			const resolved = typeof label === "function" ? label() : label;
+			let ReactDOM = null;
+			try {
+				ReactDOM = require("react-dom");
+			} catch (_error) {
+				ReactDOM = null;
+			}
+			const bubbleNode = h("span", {
+				ref: bubble,
+				id: id.current,
+				role: "tooltip",
+				style: {
+					position: "fixed",
+					left: position === null ? 0 : position.left,
+					top: position === null ? 0 : position.top,
+					visibility: position === null ? "hidden" : "visible",
+					zIndex: 1300,
+					maxWidth: "min(320px, calc(100vw - 24px))",
+					padding: "5px 8px",
+					borderRadius: "6px",
+					background: "var(--dsw-alias-bg-layer-3, var(--dsw-specific-menu, #2b2b2b))",
+					color: "var(--dsw-alias-label-primary, #fff)",
+					boxShadow: "var(--dsw-elevation-prominent, 0 4px 12px rgba(0,0,0,.28))",
+					fontSize: "12px",
+					lineHeight: "18px",
+					pointerEvents: "none",
+					whiteSpace: "normal"
+				}
+			}, resolved);
+			const portalTarget = typeof document !== "undefined" ? document.body : null;
+			const portal = ReactDOM !== null && typeof ReactDOM.createPortal === "function" && portalTarget !== null
+				? ReactDOM.createPortal(bubbleNode, portalTarget)
+				: bubbleNode;
+			return h(React.Fragment, null, rendered, portal);
+		}
+
+		/** Shared menu material seat. Class-provided styling stays authoritative. */
+		const MenuSurface = React.forwardRef(function MenuSurface(props, ref) {
+			const className = props.className === undefined ? "uit_menuSurface" : "uit_menuSurface " + props.className;
+			const rest = {};
+			for (const key of Object.keys(props)) {
+				if (key !== "className" && key !== "children") rest[key] = props[key];
+			}
+			rest.ref = ref;
+			rest.className = className;
+			return h("div", rest, props.children);
+		});
+
+		/** Build a stroke icon component. */
+		function strokeIcon(path, viewBox) {
+			return function Icon(props) {
+				const size = typeof props.size === "number" ? props.size : 16;
+				const className = props.className;
+				return h("svg", {
+					width: size,
+					height: size,
+					viewBox: viewBox || "0 0 16 16",
+					fill: "none",
+					stroke: "currentColor",
+					strokeWidth: 1.5,
+					strokeLinecap: "round",
+					strokeLinejoin: "round",
+					className,
+					"aria-hidden": "true"
+				}, h("path", { d: path }));
+			};
+		}
+
+		function filledIcon(path, viewBox) {
+			return function Icon(props) {
+				const size = typeof props.size === "number" ? props.size : 16;
+				return h("svg", {
+					width: size,
+					height: size,
+					viewBox: viewBox || "0 0 16 16",
+					fill: "currentColor",
+					className: props.className,
+					"aria-hidden": "true"
+				}, h("path", { d: path }));
+			};
+		}
+
+		function EllipsisIcon(props) {
+			const size = typeof props.size === "number" ? props.size : 16;
+			return h("svg", {
+				width: size,
+				height: size,
+				viewBox: "0 0 16 16",
+				fill: "currentColor",
+				className: props.className,
+				"aria-hidden": "true"
+			},
+				h("circle", { cx: 3, cy: 8, r: 1.5 }),
+				h("circle", { cx: 8, cy: 8, r: 1.5 }),
+				h("circle", { cx: 13, cy: 8, r: 1.5 })
+			);
+		}
+
+		const IconBranch = filledIcon("M5 3.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm0 5.2a3.2 3.2 0 1 1 0-6.4 3.2 3.2 0 0 1 0 6.4Zm6 1.3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm0-1.2a3.2 3.2 0 1 1 0 6.4 3.2 3.2 0 0 1 0-6.4ZM5.6 6.5c0 2.2 1.6 3.9 3.8 3.9h.6v1.2h-.6c-2.9 0-5.1-2.3-5.1-5.1V6.5h1.3Z");
+		const IconCheck = strokeIcon("M3.2 8.3l3 3 6.6-6.7");
+		const IconChevronDown = strokeIcon("M4 6l4 4 4-4");
+		const IconChevronRight = strokeIcon("M6 4l4 4-4 4");
+		const IconDownload = strokeIcon("M8 2v8m0 0 3-3m-3 3L5 7M3 13h10");
+		const IconData = strokeIcon("M3 4.5c0-1.1 2.2-2 5-2s5 .9 5 2v7c0 1.1-2.2 2-5 2s-5-.9-5-2v-7Zm0 0c0 1.1 2.2 2 5 2s5-.9 5-2M3 8c0 1.1 2.2 2 5 2s5-.9 5-2");
+
+		return {
+			Tooltip,
+			MenuSurface,
+			useAnchoredPosition,
+			useDismissOnOutsidePointer,
+			IconBranchOutline16: IconBranch,
+			IconBranchOutlineRegular: IconBranch,
+			IconCheckOutline14: IconCheck,
+			IconCheckOutline16: IconCheck,
+			IconCheckOutlineRegular: IconCheck,
+			IconChevronDownOutline14: IconChevronDown,
+			IconChevronDownOutlineRegular: IconChevronDown,
+			IconChevronRightOutlineRegular: IconChevronRight,
+			IconEllipsisOutline16: EllipsisIcon,
+			IconEllipsisOutlineRegular: EllipsisIcon,
+			IconDownloadOutline16: IconDownload,
+			IconDownloadOutlineRegular: IconDownload,
+			IconDataOutlineRegular: IconData
+		};
+	}
+
+		/**
+		 * DSH 0.2.2 no longer exposes @deepseek-ai/dsh-client-ui-primitives to
+		 * runtime client bundles. Route that specifier at the local shim so the
+		 * features built against it keep loading; every other specifier continues
+		 * through the loader's module table unchanged.
+		 */
+		const toolkitPrimitives = createLocalPrimitives(React, h, require);
+		const toolkitRequire = (id) => id === "@deepseek-ai/dsh-client-ui-primitives" ? toolkitPrimitives : require(id);
+		// The terminal feature lazy-loads its xterm chunk through require.async;
+		// a plain wrapper function would drop the loader's non-call properties.
+		toolkitRequire.async = typeof require.async === "function" ? require.async : undefined;
+		toolkitRequire.asset = typeof require.asset === "function" ? require.asset : undefined;
+		//#endregion
+
 		//#region vendored xterm
 
 		//#endregion
@@ -1795,68 +2144,43 @@ window.__ModuleLoader__.load({
 		var module = { exports: {} };
 		var exports = module.exports;
 		const React = require("react");
-		const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 		const h = React.createElement;
 
-		// The primitives package renamed icons between releases. Resolve the
-		// current name first, then fall back to an inline glyph; a moved icon
-		// must never take the header down.
-		function EllipsisGlyph(props) {
-			return h("svg", { viewBox: "0 0 16 16", width: 16, height: 16, "aria-hidden": true, ...props },
-				h("path", { d: "M3 9c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1Zm5 0c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1Zm5 0c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1Z", fill: "currentColor" })
-			);
-		}
-		function DownloadGlyph(props) {
-			return h("svg", { viewBox: "0 0 16 16", width: 16, height: 16, "aria-hidden": true, ...props },
-				h("path", { d: "M8 2v7m0 0 2.8-2.8M8 9 5.2 6.2M3 11.5v1.2c0 .7.6 1.3 1.3 1.3h7.4c.7 0 1.3-.6 1.3-1.3v-1.2", fill: "none", stroke: "currentColor", "stroke-width": 1.4, "stroke-linecap": "round", "stroke-linejoin": "round" })
-			);
-		}
-		const IconEllipsis = primitives.IconEllipsisOutline16 ?? primitives.IconEllipsisOutlineRegular ?? EllipsisGlyph;
-		const IconDownload = primitives.IconDownloadOutline16 ?? primitives.IconDownloadOutlineRegular ?? DownloadGlyph;
-		const Menu = typeof primitives.Menu === "function" ? primitives.Menu : null;
-		const Tooltip = typeof primitives.Tooltip === "function" ? primitives.Tooltip : ({ children }) => children;
-
 		//#region styles
+		/**
+		 * The View strip stays mounted: its buttons are the supported way to
+		 * select a View. It is taken out of the layout and made invisible so the
+		 * header shrinks to the title row; the native session-header three-dot
+		 * menu is the only visible entry point.
+		 */
 		const css = [
-			// The View strip stays mounted: its buttons are the supported way to
-			// select a View. It is taken out of the layout and made invisible so the
-			// header shrinks to the title row.
 			"header div:has(>[data-conversation-tabs]){position:absolute;top:0;left:0;right:auto;width:8000px;height:0;min-height:0;margin:0;padding:0;overflow:hidden;visibility:hidden}",
-			"header:has([data-conversation-tabs]){position:relative;min-height:0!important;padding-bottom:10px!important}",
-			// The session-log-export "More actions" trigger is replaced by this
-			// menu. Its dialog stays mounted, so download feedback still works.
-			"html[data-vwm-export=replaced] [data-slot=\"conversation.session.header.utilities\"] button[class*=\"_moreButton\"]{display:none!important}",
-			".vwm_trigger{box-sizing:border-box;width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:var(--dsw-radius-sm);flex:none;justify-content:center;align-items:center;padding:6px;display:inline-flex}",
-			".vwm_trigger svg{width:15px;height:15px}",
-			".vwm_trigger:hover,.vwm_trigger[data-open]{background:var(--dsw-alias-interactive-bg-hover)}",
-			".vwm_trigger:active{background:var(--dsw-alias-interactive-bg-active)}",
-			".vwm_trigger:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary))}",
-			".vwm_menu{box-sizing:border-box;width:min(248px,100vw - 24px)}"
+			"header:has([data-conversation-tabs]){position:relative;min-height:0!important;padding-bottom:10px!important}"
 		].join("");
 		const cssTagId = "@local/dsh-view-menu/view-menu.css";
+		//#endregion
 
 		//#region dictionaries
 		const zh = {
-			menu: "会话视图",
 			chat: "对话",
-			download: "下载 Session 日志"
+			switchFailed: "无法切换会话视图"
 		};
 		const en = {
-			menu: "Conversation views",
 			chat: "Chat",
-			download: "Download session log"
+			switchFailed: "Could not switch the conversation view"
 		};
 		//#endregion
 
 		//#region helpers
 		const VIEW_SLOT = "conversation.view";
 		const FIXED_VIEW_ID = "chat";
-		const DOWNLOAD_ID = "download";
+		const CHECK_ICON = "view-menu.check";
+		const BLANK_ICON = "view-menu.blank";
 
 		/**
 		 * Resolve a View label option. Owners register either a string or a
 		 * locale-bound thunk; a thunk may throw while its package unloads.
-		 * @param {unknown} raw - `label` from the View registration.
+		 * @param {unknown} raw - \`label\` from the View registration.
 		 * @param {string} fallback - id-based fallback.
 		 */
 		function resolveLabel(raw, fallback) {
@@ -1871,7 +2195,7 @@ window.__ModuleLoader__.load({
 
 		/**
 		 * Snapshot the hidden tab strip: its labels decide which Views exist in
-		 * this build, and `aria-selected` carries the active View.
+		 * this build, and \`aria-selected\` carries the active View.
 		 * @returns {{ labels: Set<string>, active: string | null }}
 		 */
 		function readTabSnapshot() {
@@ -1913,32 +2237,9 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * Build the menu rows. `chat` stays available even when a build hides the
-		 * tab strip for a single-View conversation; every other row must be backed
-		 * by a rendered tab, which also honors feature flags such as Coding Tools.
-		 * @param {Array<{ id: string, label: string }>} views
-		 * @param {{ labels: Set<string>, active: string | null }} tabs
-		 * @param {boolean} hasDownload
-		 */
-		function buildItems(views, tabs, hasDownload) {
-			const available = [];
-			for (const view of views ?? []) {
-				if (view === null || view === undefined || typeof view.id !== "string") continue;
-				if (view.id !== FIXED_VIEW_ID && !tabs.labels.has(view.label)) continue;
-				available.push(view);
-			}
-			const items = available.map((view) => ({ id: view.id, label: view.label }));
-			if (hasDownload) {
-				if (items.length > 0) items.push({ type: "separator", id: "separator" });
-				items.push({ id: DOWNLOAD_ID, label: "", icon: null });
-			}
-			return { items, available };
-		}
-
-		/**
 		 * Select a View through its rendered tab button. The tab strip is hidden
 		 * with CSS, so the button still exists and still runs the shipped
-		 * `selectView` path (activation + preference), unlike a synthetic store
+		 * \`selectView\` path (activation + preference), unlike a synthetic store
 		 * write.
 		 * @param {string} label - localized View label.
 		 * @returns {boolean} whether a matching tab was found.
@@ -1953,114 +2254,54 @@ window.__ModuleLoader__.load({
 			}
 			return false;
 		}
-		//#endregion
 
-		//#region export slot
-		/** Headers mount more than once in split views; only the last owner clears the flag. */
-		let exportOwners = 0;
 		/**
-		 * Mark the shipped export trigger as replaced by our menu. Its dialog
-		 * stays mounted, so download feedback keeps working without the trigger.
+		 * Build the actions the native session-header menu renders. The active
+		 * View carries a check glyph; every action is backed by a mounted tab so
+		 * clicking it reuses the shipped View selection path.
+		 * @param {Array<{ id: string, label: string }>} views
+		 * @param {{ labels: Set<string>, active: string | null }} tabs
+		 * @param {(key: string) => string} tr
 		 */
-		function claimExportSlot() {
-			if (typeof document === "undefined") return () => {};
-			exportOwners += 1;
-			document.documentElement.dataset.vwmExport = "replaced";
-			return () => {
-				exportOwners = Math.max(0, exportOwners - 1);
-				if (exportOwners === 0) delete document.documentElement.dataset.vwmExport;
-			};
-		}
-		//#endregion
-
-		//#region component
-		/**
-		 * Top-right header menu that owns every Conversation View plus the Session
-		 * log download. It replaces the shipped "More actions" trigger while
-		 * keeping that package's dialog mounted.
-		 * @param {{ readViews: (tr: (key: string) => string) => Array<{ id: string, label: string }>, hasDownload: () => boolean, download: () => void, t: (key: string) => string }} props
-		 */
-		function ViewMenuButton({ readViews: read, hasDownload, download, t }) {
-			const tr = typeof t === "function" ? t : (key) => key;
-			const [open, setOpen] = React.useState(false);
-			const views = typeof read === "function" ? read(tr) : [];
-			const tabs = readTabSnapshot();
-			const canDownload = typeof hasDownload === "function" && hasDownload();
-			const { items, available } = buildItems(views, tabs, canDownload);
-			const activeView = available.find((view) => tabs.active !== null && view.label === tabs.active);
-			const label = tr("menu");
-			React.useEffect(() => (canDownload ? claimExportSlot() : undefined), [canDownload]);
-			const menuItems = items.map((item) => {
-				if (item.type === "separator") return item;
-				if (item.id === DOWNLOAD_ID) return { ...item, label: tr("download"), icon: h(IconDownload, { size: 16 }) };
-				return item;
-			});
-
-			const close = () => setOpen(false);
-			const onSelect = (id) => {
-				close();
-				if (id === DOWNLOAD_ID) {
-					if (typeof download === "function") download();
-					return;
+		function buildViewActions(views, tabs, tr) {
+			const available = (views ?? []).filter((view) => view !== null && view !== undefined
+				&& typeof view.id === "string" && tabs.labels.has(view.label));
+			return available.map((view) => ({
+				id: "view-" + view.id,
+				label: view.label,
+				icon: { key: tabs.active === view.label ? CHECK_ICON : BLANK_ICON },
+				run: () => {
+					if (!clickViewTab(view.label)) throw new Error(tr("switchFailed"));
 				}
-				const view = available.find((entry) => entry.id === id);
-				if (view !== undefined) clickViewTab(view.label);
-			};
+			}));
+		}
 
-			const trigger = h("button", {
-				type: "button",
-				className: "vwm_trigger",
-				"data-open": open ? "" : undefined,
-				"aria-label": label,
-				"aria-haspopup": "menu",
-				"aria-expanded": open,
-				onClick: () => setOpen((value) => !value)
-			}, h(IconEllipsis, { size: 15 }));
+		/** 14px check mark matching the native menu's icon column. */
+		function CheckIcon() {
+			return h("svg", { width: 14, height: 14, viewBox: "0 0 16 16", "aria-hidden": "true" },
+				h("path", {
+					d: "m3.2 8.3 3 3 6.6-6.7",
+					fill: "none",
+					stroke: "currentColor",
+					"stroke-width": 1.7,
+					"stroke-linecap": "round",
+					"stroke-linejoin": "round"
+				})
+			);
+		}
 
-			return h(Menu, {
-				open,
-				onClose: close,
-				align: "end",
-				side: "bottom",
-				dense: true,
-				portal: true,
-				autoFocus: true,
-				selectedId: activeView !== undefined ? activeView.id : undefined,
-				items: menuItems,
-				listClassName: "vwm_menu",
-				onSelect,
-				anchor: h(Tooltip, { label, side: "bottom", delayMs: 500, children: trigger })
-			});
+		/** Empty icon seat so View rows align with icon-bearing native actions. */
+		function BlankIcon() {
+			return h("span", { "aria-hidden": "true", style: { display: "inline-block", width: 14, height: 14 } });
 		}
 		//#endregion
 
 		//#region plugin body
-		/** Show a render failure instead of silently losing the header menu. */
-		class ViewMenuBoundary extends React.Component {
-			constructor(props) {
-				super(props);
-				this.state = { error: null };
-			}
-			static getDerivedStateFromError(error) {
-				return { error };
-			}
-			componentDidCatch(error) {
-				console.error("view-menu: render failed", error);
-			}
-			render() {
-				if (this.state.error === null) return this.props.children;
-				return h("span", { style: { color: "var(--dsw-alias-state-error-primary)", fontSize: "11px", padding: "6px" } }, "view-menu error: " + String(this.state.error?.message ?? this.state.error));
-			}
-		}
-
 		const NS = "view-menu";
-		const inject = ["slots", "locale"];
+		const inject = ["slots", "locale", "contextMenus"];
 
 		/** @param {any} ctx */
 		function apply(ctx) {
-			// Without the Menu primitive there is no safe replacement trigger;
-			// stay inert instead of hiding the shipped header controls.
-			if (Menu === null) return;
 			ctx.effect(() => {
 				const tag = document.createElement("style");
 				tag.dataset.plugin = "@local/dsh-view-menu";
@@ -2070,41 +2311,56 @@ window.__ModuleLoader__.load({
 				return () => tag.remove();
 			}, "view-menu: styles");
 			ctx.effect(() => ctx.locale.register(NS, { zh, en }), "view-menu: dictionaries");
+			const tr = ctx.locale.bind(NS);
 
-			const downloadService = () => {
-				try {
-					return typeof ctx.get === "function" ? ctx.get("sessionLogDownload") : undefined;
-				} catch (_error) {
-					return undefined;
-				}
-			};
+			ctx.slots.inject("contextMenu.icon", function* () {
+				yield ctx.slots.register({ name: "contextMenu.icon", key: CHECK_ICON }, CheckIcon);
+				yield ctx.slots.register({ name: "contextMenu.icon", key: BLANK_ICON }, BlankIcon);
+			});
 
-			ctx.slots.inject("conversation.session.header.utilities", () => ctx.slots.register({
-				name: "conversation.session.header.utilities",
-				id: "view-menu",
-				order: 1000,
-				locale: NS,
-				inject: (sessionId) => ({
-					readViews: (tr) => readViews(ctx, tr),
-					hasDownload: () => downloadService() !== undefined,
-					download: () => {
-						const service = downloadService();
-						if (service !== undefined && typeof service.download === "function") service.download(sessionId);
+			// The feature runner's scoped facade may start before the context-menu
+			// service finishes applying; wait briefly for the optional lookup.
+			ctx.effect(() => {
+				let timer;
+				let dispose;
+				let attempts = 0;
+				const attach = () => {
+					let menus;
+					try {
+						menus = ctx.contextMenus ?? (typeof ctx.get === "function" ? ctx.get("contextMenus") : undefined);
+					} catch (_error) {
+						menus = undefined;
 					}
-				})
-			}, (props) => h(ViewMenuBoundary, null, h(ViewMenuButton, props))));
+					if (menus === undefined || menus === null) {
+						attempts += 1;
+						if (attempts <= 50) timer = setTimeout(attach, 100);
+						return;
+					}
+					dispose = menus.register({
+						id: "view-menu.views",
+						target: "sessionHeader",
+						order: 10,
+						observe: () => [ctx.locale],
+						resolve: () => buildViewActions(readViews(ctx, tr), readTabSnapshot(), tr)
+					});
+				};
+				attach();
+				return () => {
+					if (timer !== undefined) clearTimeout(timer);
+					if (typeof dispose === "function") dispose();
+				};
+			}, "view-menu: native session header views");
 		}
 		//#endregion
 
 		exports.apply = apply;
 		exports.inject = inject;
-		exports.ViewMenuButton = ViewMenuButton;
 		exports.__internals = {
 			resolveLabel,
 			readTabSnapshot,
-			buildItems,
-			clickViewTab,
-			claimExportSlot
+			readViews,
+			buildViewActions,
+			clickViewTab
 		};
 		return module.exports;
 		}
@@ -2122,22 +2378,28 @@ window.__ModuleLoader__.load({
 		/**
 		 * The shipped New Session button is a raised capsule (border, elevated
 		 * fill, centered label). This sheet makes it a peer of the panel rows:
-		 * transparent, 36px, left-aligned icon + label, the same hover wash.
+		 * transparent, 32px, left-aligned icon + label, the same hover wash.
 		 * Collapsed rail styles are left untouched.
+		 *
+		 * DSH 0.2.2 wrapped the button in div.newSessionRow (the session-action
+		 * HOC seat), so the old direct-child selector no longer matched. Match
+		 * the button inside that row instead.
 		 */
 		const css = [
+			// New Session wrapper: align it with the panel rows' inset.
+			"div[class*=\"root\"]:not([class*=\"collapsed\"]) [class*=\"newSessionRow\"]:has(>button[class*=\"newSession\"]){margin:0 0 2px!important;gap:0!important}",
 			// New Session: same geometry and surface as a global panel row.
-			"div[class*=\"root\"]:not([class*=\"collapsed\"])>button[class*=\"newSession\"]{box-sizing:border-box!important;width:auto!important;height:auto!important;min-height:36px!important;margin:0 2px 2px!important;padding:7px 8px!important;border:0!important;border-radius:var(--dsw-radius-md)!important;background:transparent!important;color:var(--dsw-alias-label-primary)!important;font-family:inherit!important;font-size:14px!important;font-weight:400!important;font-style:inherit!important;letter-spacing:inherit!important;line-height:22px!important;text-align:left!important;justify-content:flex-start!important;gap:8px!important;overflow:visible!important}",
-			"div[class*=\"root\"]:not([class*=\"collapsed\"])>button[class*=\"newSession\"]:hover{background:var(--dsw-alias-interactive-bg-hover)!important}",
-			"div[class*=\"root\"]:not([class*=\"collapsed\"])>button[class*=\"newSession\"]:active{background:var(--dsw-alias-interactive-bg-active)!important}",
-			"div[class*=\"root\"]:not([class*=\"collapsed\"])>button[class*=\"newSession\"]:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary))!important;outline-offset:-2px!important}",
+			"div[class*=\"root\"]:not([class*=\"collapsed\"]) button[class*=\"newSession\"]{box-sizing:border-box!important;width:auto!important;height:auto!important;min-height:32px!important;margin:0!important;padding:5px calc(var(--dsh-sidebar-row-padding) - var(--dsh-sidebar-paint-inset))!important;border:0!important;border-radius:var(--dsw-radius-md)!important;background:transparent!important;color:var(--dsw-alias-label-primary)!important;font-family:inherit!important;font-size:14px!important;font-weight:400!important;font-style:inherit!important;letter-spacing:inherit!important;line-height:22px!important;text-align:left!important;justify-content:flex-start!important;gap:8px!important;overflow:visible!important;container-type:normal!important}",
+			"div[class*=\"root\"]:not([class*=\"collapsed\"]) button[class*=\"newSession\"]:hover{background:var(--dsw-alias-interactive-bg-hover)!important}",
+			"div[class*=\"root\"]:not([class*=\"collapsed\"]) button[class*=\"newSession\"]:active{background:var(--dsw-alias-interactive-bg-active)!important}",
+			"div[class*=\"root\"]:not([class*=\"collapsed\"]) button[class*=\"newSession\"]:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary))!important;outline-offset:-2px!important}",
 			// Let the label take the row and keep the shortcut hint at the far right.
-			"div[class*=\"root\"]:not([class*=\"collapsed\"])>button[class*=\"newSession\"]>[class*=\"newSessionLabelMask\"]{display:flex!important;flex:1 1 auto!important;align-items:center!important;min-width:0!important}",
-			"div[class*=\"root\"]:not([class*=\"collapsed\"])>button[class*=\"newSession\"] [class*=\"newSessionContent\"]{justify-content:flex-start!important;gap:8px!important;width:100%!important;min-width:0!important}",
-			"div[class*=\"root\"]:not([class*=\"collapsed\"])>button[class*=\"newSession\"] [class*=\"newSessionContent\"]>svg{flex:none!important;width:16px!important;height:16px!important}",
-			"div[class*=\"root\"]:not([class*=\"collapsed\"])>button[class*=\"newSession\"] [class*=\"newSessionLabel\"]{max-width:100%!important;min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important}",
-			"div[class*=\"root\"]:not([class*=\"collapsed\"])>button[class*=\"newSession\"] [class*=\"newSessionShortcut\"]{flex:none!important;margin-left:auto!important;padding-left:8px!important}",
-			// The wordmark SVG carries a dark HARNESS badge after the deepseek
+			"div[class*=\"root\"]:not([class*=\"collapsed\"]) button[class*=\"newSession\"]>[class*=\"newSessionLabelMask\"]{display:flex!important;flex:1 1 auto!important;align-items:center!important;min-width:0!important}",
+			"div[class*=\"root\"]:not([class*=\"collapsed\"]) button[class*=\"newSession\"] [class*=\"newSessionContent\"]{justify-content:flex-start!important;gap:8px!important;width:100%!important;min-width:0!important}",
+			"div[class*=\"root\"]:not([class*=\"collapsed\"]) button[class*=\"newSession\"] [class*=\"newSessionContent\"]>svg{flex:none!important;width:16px!important;height:16px!important}",
+			"div[class*=\"root\"]:not([class*=\"collapsed\"]) button[class*=\"newSession\"] [class*=\"newSessionLabel\"]{max-width:100%!important;min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important}",
+			"div[class*=\"root\"]:not([class*=\"collapsed\"]) button[class*=\"newSession\"] [class*=\"newSessionShortcut\"]{flex:none!important;margin-left:auto!important;padding-left:8px!important}",
+			// The wordmark SVG may carry a dark HARNESS badge after the deepseek
 			// text. Hide the badge plate and its glyph group, leaving the
 			// deepseek wordmark and the mark beside it untouched.
 			"div[class*=\"logoRow\"] [class*=\"brandName\"] svg>rect{display:none!important}",
@@ -2179,10 +2441,12 @@ window.__ModuleLoader__.load({
 		const NAV_SELECTOR = "nav[class*=\"panelList\"]";
 		/** Marks the nav this feature owns; every rule below is scoped to it. */
 		const NAV_ATTR = "data-uit-sidebar-nav";
-		/** Marks one tagged panel row and stores its registration id. */
+		/** Marks one tagged panel row host and stores its registration id. */
 		const ENTRY_ATTR = "data-uit-sidebar-entry";
 		/** "true" hides a row without unmounting it, so React state survives. */
 		const HIDDEN_ATTR = "data-uit-sidebar-hidden";
+		/** Marks the More launcher's host so the manager owns the whole list. */
+		const MORE_ATTR = "data-uit-sidebar-more";
 		/** Custom property read by the order rule (0 = first). */
 		const ORDER_VAR = "--uit-entry-order";
 		/** Set on the nav when every row is hidden, matching the native empty list. */
@@ -2196,14 +2460,18 @@ window.__ModuleLoader__.load({
 		 * order and visibility. More is hidden outright: the manager owns the
 		 * whole panel list, so the app's overflow menu would only offer plugin
 		 * browsing/creation actions the feature deliberately replaces.
+		 *
+		 * DSH 0.2.2 wraps each row button in div.panelEntry (pin/unpin seat), so
+		 * the order/hidden marks live on the direct nav child, which may be the
+		 * button itself or that wrapper.
 		 */
 		const css = [
-			NAV_SELECTOR + "[" + NAV_ATTR + "]>button[" + ENTRY_ATTR + "]{order:var(" + ORDER_VAR + ",0)}",
-			NAV_SELECTOR + "[" + NAV_ATTR + "]>button[" + ENTRY_ATTR + "][" + HIDDEN_ATTR + "=\"true\"]{display:none!important}",
+			NAV_SELECTOR + "[" + NAV_ATTR + "]>[" + ENTRY_ATTR + "]{order:var(" + ORDER_VAR + ",0)}",
+			NAV_SELECTOR + "[" + NAV_ATTR + "]>[" + ENTRY_ATTR + "][" + HIDDEN_ATTR + "=\"true\"]{display:none!important}",
 			NAV_SELECTOR + "[" + NAV_ATTR + "][" + EMPTY_ATTR + "=\"true\"]{display:none!important}",
-			// The More wrapper differs across primitives: sometimes the Menu
-			// anchor is the nav child, sometimes a column wrapper owns it.
-			NAV_SELECTOR + "[" + NAV_ATTR + "] [class*=\"moreAnchor\"]{display:none!important}",
+			// The More launcher sits inside its own direct child (Menu anchor or a
+			// column wrapper). Hide whichever direct child owns it.
+			NAV_SELECTOR + "[" + NAV_ATTR + "] [" + MORE_ATTR + "]{display:none!important}",
 			NAV_SELECTOR + "[" + NAV_ATTR + "]>button[aria-haspopup=\"menu\"]{display:none!important}"
 		].join("");
 		//#endregion
@@ -2265,6 +2533,57 @@ window.__ModuleLoader__.load({
 			if (node.tagName !== "BUTTON" || node.getAttribute === undefined) return false;
 			return node.getAttribute("aria-haspopup") !== "menu";
 		}
+
+		/** The direct nav child that owns a row button (the button or its wrapper). */
+		function rowHost(nav, node) {
+			let current = node;
+			while (current !== null && current !== undefined && current.parentElement !== null && current.parentElement !== nav) {
+				current = current.parentElement;
+			}
+			return current !== null && current !== undefined && current.parentElement === nav ? current : node;
+		}
+
+		/**
+		 * Snapshot one nav's panel rows. 0.2.2 renders a button inside a
+		 * div.panelEntry; older shells rendered the button directly. Prefer the
+		 * shipped panelRow class and fall back to direct buttons.
+		 * @param {any} nav
+		 * @returns {ReadonlyArray<{ button: any, host: any }>}
+		 */
+		function collectRows(nav) {
+			if (nav === null || nav === undefined || typeof nav.querySelectorAll !== "function") return [];
+			let buttons = [];
+			try {
+				buttons = Array.from(nav.querySelectorAll("button[class*=\"panelRow\"]")).filter(isPanelRow);
+			} catch (_error) {
+				buttons = [];
+			}
+			if (buttons.length === 0) {
+				buttons = Array.from(nav.children).filter(isPanelRow);
+			}
+			const seen = new Set();
+			const rows = [];
+			for (const button of buttons) {
+				const host = rowHost(nav, button);
+				if (seen.has(host)) continue;
+				seen.add(host);
+				rows.push({ button, host });
+			}
+			return rows;
+		}
+
+		/**
+		 * Hide the More launcher's direct nav child, whether the launcher is a
+		 * direct button or wrapped by a Menu anchor.
+		 * @param {any} nav
+		 */
+		function tagMore(nav) {
+			if (nav === null || nav === undefined || typeof nav.querySelectorAll !== "function") return;
+			for (const button of nav.querySelectorAll("button[aria-haspopup=\"menu\"]")) {
+				const host = rowHost(nav, button);
+				if (host !== null && host !== undefined && typeof host.setAttribute === "function") host.setAttribute(MORE_ATTR, "");
+			}
+		}
 		//#endregion
 
 		//#region plugin body
@@ -2296,25 +2615,28 @@ window.__ModuleLoader__.load({
 				const snapshot = store.getSnapshot();
 				const nav = document.querySelector(NAV_SELECTOR);
 				if (nav === null) return;
-				const rows = Array.from(nav.children).filter(isPanelRow);
-				const assigned = mapRows(rows, snapshot.entries, rowLabel);
+				const records = collectRows(nav);
+				const buttons = records.map((record) => record.button);
+				const assigned = mapRows(buttons, snapshot.entries, rowLabel);
 				const order = new Map(snapshot.entries.map((entry, index) => [entry.id, index]));
 				const hidden = new Set(snapshot.hidden);
 				let visible = 0;
-				for (const row of rows) {
-					const id = assigned.get(row);
+				for (const record of records) {
+					const host = record.host;
+					const id = assigned.get(record.button);
 					if (id === undefined) {
-						row.removeAttribute(ENTRY_ATTR);
-						row.removeAttribute(HIDDEN_ATTR);
-						row.style.removeProperty(ORDER_VAR);
+						host.removeAttribute(ENTRY_ATTR);
+						host.removeAttribute(HIDDEN_ATTR);
+						host.style.removeProperty(ORDER_VAR);
 						continue;
 					}
-					row.setAttribute(ENTRY_ATTR, id);
-					row.style.setProperty(ORDER_VAR, String(order.get(id) ?? 0));
+					host.setAttribute(ENTRY_ATTR, id);
+					host.style.setProperty(ORDER_VAR, String(order.get(id) ?? 0));
 					const isHidden = hidden.has(id);
-					row.setAttribute(HIDDEN_ATTR, isHidden ? "true" : "false");
+					host.setAttribute(HIDDEN_ATTR, isHidden ? "true" : "false");
 					if (!isHidden) visible += 1;
 				}
+				tagMore(nav);
 				nav.setAttribute(NAV_ATTR, "");
 				// A zero-entry snapshot can be a startup race (rows already
 				// rendered, registry subscription not delivered yet). In that
@@ -2334,11 +2656,12 @@ window.__ModuleLoader__.load({
 					else clearTimeout(frame);
 					frame = 0;
 				}
-				for (const row of document.querySelectorAll("[" + ENTRY_ATTR + "]")) {
-					row.removeAttribute(ENTRY_ATTR);
-					row.removeAttribute(HIDDEN_ATTR);
-					row.style.removeProperty(ORDER_VAR);
+				for (const node of document.querySelectorAll("[" + ENTRY_ATTR + "]")) {
+					node.removeAttribute(ENTRY_ATTR);
+					node.removeAttribute(HIDDEN_ATTR);
+					node.style.removeProperty(ORDER_VAR);
 				}
+				for (const node of document.querySelectorAll("[" + MORE_ATTR + "]")) node.removeAttribute(MORE_ATTR);
 				for (const nav of document.querySelectorAll("[" + NAV_ATTR + "]")) {
 					nav.removeAttribute(NAV_ATTR);
 					nav.removeAttribute(EMPTY_ATTR);
@@ -2379,12 +2702,15 @@ window.__ModuleLoader__.load({
 			NAV_ATTR,
 			ENTRY_ATTR,
 			HIDDEN_ATTR,
+			MORE_ATTR,
 			ORDER_VAR,
 			EMPTY_ATTR,
 			css,
 			isPanelRow,
 			mapRows,
-			rowLabel
+			rowLabel,
+			rowHost,
+			collectRows
 		};
 		return module.exports;
 		}
@@ -4235,6 +4561,7 @@ window.__ModuleLoader__.load({
 
 		exports.apply = apply;
 		exports.inject = inject;
+		exports.__internals = { loadXterm };
 		return module.exports;
 		}
 
@@ -5035,6 +5362,8 @@ window.__ModuleLoader__.load({
 		let activeStore = null;
 		let activeRunner = null;
 		let activeEntryStore = null;
+		/** Locale-bound translator, used when a section is rendered without props.t. */
+		let activeTranslate = null;
 		/** Stable empty snapshot so the section renders before apply() wires the store. */
 		const EMPTY_ENTRY_SNAPSHOT = Object.freeze({ entries: Object.freeze([]), hidden: Object.freeze([]) });
 		const EMPTY_ENTRY_STORE = Object.freeze({
@@ -5135,7 +5464,9 @@ window.__ModuleLoader__.load({
 		}
 
 		function UIToolkitSection(props) {
-			const t = props !== null && props !== undefined && typeof props.t === "function" ? props.t : (key) => key;
+			const t = props !== null && props !== undefined && typeof props.t === "function"
+				? props.t
+				: (activeTranslate === null ? (key) => key : activeTranslate);
 			if (activeStore === null) return null;
 			const flags = useStoreSnapshot(activeStore.subscribe, activeStore.getSnapshot);
 			const entryStore = activeEntryStore ?? EMPTY_ENTRY_STORE;
@@ -5197,11 +5528,12 @@ window.__ModuleLoader__.load({
 				locale: ctx.locale,
 				storage: createPreferenceStorage(ENTRY_COOKIE_NAME)
 			});
-			const runner = createFeatureRunner(ctx, require);
+			const runner = createFeatureRunner(ctx, toolkitRequire);
 			sidebarEntriesHost = entryStore;
 			activeStore = store;
 			activeRunner = runner;
 			activeEntryStore = entryStore;
+			activeTranslate = translate;
 			ctx.effect(() => entryStore.start(), "ui-toolkit: sidebar entry catalog");
 			runner.sync(store.read());
 
@@ -5217,6 +5549,7 @@ window.__ModuleLoader__.load({
 				activeRunner = null;
 				activeStore = null;
 				activeEntryStore = null;
+				activeTranslate = null;
 				sidebarEntriesHost = null;
 			}, "ui-toolkit: settings state");
 		}
@@ -5227,6 +5560,8 @@ window.__ModuleLoader__.load({
 		exports.UIToolkitSection = UIToolkitSection;
 		exports.SidebarEntriesManager = SidebarEntriesManager;
 		exports.__internals = {
+			toolkitRequire,
+			toolkitPrimitives,
 			FEATURES,
 			FEATURE_IDS,
 			DEFAULT_FLAGS,

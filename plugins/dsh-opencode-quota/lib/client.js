@@ -5,8 +5,83 @@ window.__ModuleLoader__.load({
 		var exports = module.exports;
 		const React = require("react");
 		const ReactDOM = require("react-dom");
-		const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 		const h = React.createElement;
+
+		/**
+		 * Local fallbacks for the two primitives this bundle uses. DSH 0.2.2
+		 * stopped exposing @deepseek-ai/dsh-client-ui-primitives to runtime
+		 * client bundles, so a raw require throws and the quota row never
+		 * registers. Keep the same call shape the panel already expects.
+		 */
+		function createQuotaPrimitives(React) {
+			const layoutEffect = typeof React.useLayoutEffect === "function" ? React.useLayoutEffect : React.useEffect;
+			function useAnchoredPosition(options) {
+				const [position, setPosition] = React.useState(null);
+				layoutEffect(() => {
+					if (!options.open) {
+						setPosition(null);
+						return undefined;
+					}
+					if (typeof window === "undefined") return undefined;
+					let disposed = false;
+					let frame = 0;
+					const measure = () => {
+						frame = 0;
+						if (disposed) return;
+						const anchor = options.anchorRef?.current;
+						const panel = options.panelRef?.current;
+						if (anchor === null || anchor === undefined || panel === null || panel === undefined) return;
+						const a = anchor.getBoundingClientRect();
+						const p = panel.getBoundingClientRect();
+						const vw = window.innerWidth || 0;
+						const vh = window.innerHeight || 0;
+						const margin = typeof options.margin === "number" ? options.margin : 12;
+						const gap = typeof options.gap === "number" ? options.gap : 8;
+						let left = a.left + a.width / 2 - p.width / 2;
+						left = Math.max(margin, Math.min(left, vw - p.width - margin));
+						let top = a.top - p.height - gap;
+						if (top < margin && a.bottom + gap + p.height <= vh - margin) top = a.bottom + gap;
+						top = Math.max(margin, Math.min(top, vh - p.height - margin));
+						const next = { left: Math.round(left), top: Math.round(top) };
+						setPosition((current) => current !== null && current.left === next.left && current.top === next.top ? current : next);
+					};
+					frame = typeof requestAnimationFrame === "function" ? requestAnimationFrame(measure) : 0;
+					if (frame === 0) measure();
+					let observer = null;
+					if (typeof ResizeObserver === "function") {
+						observer = new ResizeObserver(measure);
+						const panel = options.panelRef?.current;
+						if (panel !== null && panel !== undefined) observer.observe(panel);
+					}
+					window.addEventListener("resize", measure);
+					window.addEventListener("scroll", measure, true);
+					return () => {
+						disposed = true;
+						if (frame !== 0 && typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame);
+						if (observer !== null) observer.disconnect();
+						window.removeEventListener("resize", measure);
+						window.removeEventListener("scroll", measure, true);
+					};
+				}, [options.open, options.anchorRef, options.panelRef, options.side, options.gap, options.margin]);
+				return position;
+			}
+			function useDismissOnOutsidePointer(root, open, setOpen, portal) {
+				React.useEffect(() => {
+					if (!open) return undefined;
+					const onPointerDown = (event) => {
+						if (!(event.target instanceof Node)) return;
+						const insideRoot = root?.current?.contains(event.target) === true;
+						const insidePortal = portal?.current?.contains(event.target) === true;
+						if (!insideRoot && !insidePortal) setOpen(false);
+					};
+					document.addEventListener("pointerdown", onPointerDown);
+					return () => document.removeEventListener("pointerdown", onPointerDown);
+				}, [root, open, setOpen, portal]);
+			}
+			return { useAnchoredPosition, useDismissOnOutsidePointer };
+		}
+
+		const primitives = createQuotaPrimitives(React);
 
 		//#region styles
 		const css = [

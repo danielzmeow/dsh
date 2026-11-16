@@ -9,10 +9,12 @@ window.__ModuleLoader__.load({
 		const NAV_SELECTOR = "nav[class*=\"panelList\"]";
 		/** Marks the nav this feature owns; every rule below is scoped to it. */
 		const NAV_ATTR = "data-uit-sidebar-nav";
-		/** Marks one tagged panel row and stores its registration id. */
+		/** Marks one tagged panel row host and stores its registration id. */
 		const ENTRY_ATTR = "data-uit-sidebar-entry";
 		/** "true" hides a row without unmounting it, so React state survives. */
 		const HIDDEN_ATTR = "data-uit-sidebar-hidden";
+		/** Marks the More launcher's host so the manager owns the whole list. */
+		const MORE_ATTR = "data-uit-sidebar-more";
 		/** Custom property read by the order rule (0 = first). */
 		const ORDER_VAR = "--uit-entry-order";
 		/** Set on the nav when every row is hidden, matching the native empty list. */
@@ -26,14 +28,18 @@ window.__ModuleLoader__.load({
 		 * order and visibility. More is hidden outright: the manager owns the
 		 * whole panel list, so the app's overflow menu would only offer plugin
 		 * browsing/creation actions the feature deliberately replaces.
+		 *
+		 * DSH 0.2.2 wraps each row button in div.panelEntry (pin/unpin seat), so
+		 * the order/hidden marks live on the direct nav child, which may be the
+		 * button itself or that wrapper.
 		 */
 		const css = [
-			NAV_SELECTOR + "[" + NAV_ATTR + "]>button[" + ENTRY_ATTR + "]{order:var(" + ORDER_VAR + ",0)}",
-			NAV_SELECTOR + "[" + NAV_ATTR + "]>button[" + ENTRY_ATTR + "][" + HIDDEN_ATTR + "=\"true\"]{display:none!important}",
+			NAV_SELECTOR + "[" + NAV_ATTR + "]>[" + ENTRY_ATTR + "]{order:var(" + ORDER_VAR + ",0)}",
+			NAV_SELECTOR + "[" + NAV_ATTR + "]>[" + ENTRY_ATTR + "][" + HIDDEN_ATTR + "=\"true\"]{display:none!important}",
 			NAV_SELECTOR + "[" + NAV_ATTR + "][" + EMPTY_ATTR + "=\"true\"]{display:none!important}",
-			// The More wrapper differs across primitives: sometimes the Menu
-			// anchor is the nav child, sometimes a column wrapper owns it.
-			NAV_SELECTOR + "[" + NAV_ATTR + "] [class*=\"moreAnchor\"]{display:none!important}",
+			// The More launcher sits inside its own direct child (Menu anchor or a
+			// column wrapper). Hide whichever direct child owns it.
+			NAV_SELECTOR + "[" + NAV_ATTR + "] [" + MORE_ATTR + "]{display:none!important}",
 			NAV_SELECTOR + "[" + NAV_ATTR + "]>button[aria-haspopup=\"menu\"]{display:none!important}"
 		].join("");
 		//#endregion
@@ -95,6 +101,57 @@ window.__ModuleLoader__.load({
 			if (node.tagName !== "BUTTON" || node.getAttribute === undefined) return false;
 			return node.getAttribute("aria-haspopup") !== "menu";
 		}
+
+		/** The direct nav child that owns a row button (the button or its wrapper). */
+		function rowHost(nav, node) {
+			let current = node;
+			while (current !== null && current !== undefined && current.parentElement !== null && current.parentElement !== nav) {
+				current = current.parentElement;
+			}
+			return current !== null && current !== undefined && current.parentElement === nav ? current : node;
+		}
+
+		/**
+		 * Snapshot one nav's panel rows. 0.2.2 renders a button inside a
+		 * div.panelEntry; older shells rendered the button directly. Prefer the
+		 * shipped panelRow class and fall back to direct buttons.
+		 * @param {any} nav
+		 * @returns {ReadonlyArray<{ button: any, host: any }>}
+		 */
+		function collectRows(nav) {
+			if (nav === null || nav === undefined || typeof nav.querySelectorAll !== "function") return [];
+			let buttons = [];
+			try {
+				buttons = Array.from(nav.querySelectorAll("button[class*=\"panelRow\"]")).filter(isPanelRow);
+			} catch (_error) {
+				buttons = [];
+			}
+			if (buttons.length === 0) {
+				buttons = Array.from(nav.children).filter(isPanelRow);
+			}
+			const seen = new Set();
+			const rows = [];
+			for (const button of buttons) {
+				const host = rowHost(nav, button);
+				if (seen.has(host)) continue;
+				seen.add(host);
+				rows.push({ button, host });
+			}
+			return rows;
+		}
+
+		/**
+		 * Hide the More launcher's direct nav child, whether the launcher is a
+		 * direct button or wrapped by a Menu anchor.
+		 * @param {any} nav
+		 */
+		function tagMore(nav) {
+			if (nav === null || nav === undefined || typeof nav.querySelectorAll !== "function") return;
+			for (const button of nav.querySelectorAll("button[aria-haspopup=\"menu\"]")) {
+				const host = rowHost(nav, button);
+				if (host !== null && host !== undefined && typeof host.setAttribute === "function") host.setAttribute(MORE_ATTR, "");
+			}
+		}
 		//#endregion
 
 		//#region plugin body
@@ -126,25 +183,28 @@ window.__ModuleLoader__.load({
 				const snapshot = store.getSnapshot();
 				const nav = document.querySelector(NAV_SELECTOR);
 				if (nav === null) return;
-				const rows = Array.from(nav.children).filter(isPanelRow);
-				const assigned = mapRows(rows, snapshot.entries, rowLabel);
+				const records = collectRows(nav);
+				const buttons = records.map((record) => record.button);
+				const assigned = mapRows(buttons, snapshot.entries, rowLabel);
 				const order = new Map(snapshot.entries.map((entry, index) => [entry.id, index]));
 				const hidden = new Set(snapshot.hidden);
 				let visible = 0;
-				for (const row of rows) {
-					const id = assigned.get(row);
+				for (const record of records) {
+					const host = record.host;
+					const id = assigned.get(record.button);
 					if (id === undefined) {
-						row.removeAttribute(ENTRY_ATTR);
-						row.removeAttribute(HIDDEN_ATTR);
-						row.style.removeProperty(ORDER_VAR);
+						host.removeAttribute(ENTRY_ATTR);
+						host.removeAttribute(HIDDEN_ATTR);
+						host.style.removeProperty(ORDER_VAR);
 						continue;
 					}
-					row.setAttribute(ENTRY_ATTR, id);
-					row.style.setProperty(ORDER_VAR, String(order.get(id) ?? 0));
+					host.setAttribute(ENTRY_ATTR, id);
+					host.style.setProperty(ORDER_VAR, String(order.get(id) ?? 0));
 					const isHidden = hidden.has(id);
-					row.setAttribute(HIDDEN_ATTR, isHidden ? "true" : "false");
+					host.setAttribute(HIDDEN_ATTR, isHidden ? "true" : "false");
 					if (!isHidden) visible += 1;
 				}
+				tagMore(nav);
 				nav.setAttribute(NAV_ATTR, "");
 				// A zero-entry snapshot can be a startup race (rows already
 				// rendered, registry subscription not delivered yet). In that
@@ -164,11 +224,12 @@ window.__ModuleLoader__.load({
 					else clearTimeout(frame);
 					frame = 0;
 				}
-				for (const row of document.querySelectorAll("[" + ENTRY_ATTR + "]")) {
-					row.removeAttribute(ENTRY_ATTR);
-					row.removeAttribute(HIDDEN_ATTR);
-					row.style.removeProperty(ORDER_VAR);
+				for (const node of document.querySelectorAll("[" + ENTRY_ATTR + "]")) {
+					node.removeAttribute(ENTRY_ATTR);
+					node.removeAttribute(HIDDEN_ATTR);
+					node.style.removeProperty(ORDER_VAR);
 				}
+				for (const node of document.querySelectorAll("[" + MORE_ATTR + "]")) node.removeAttribute(MORE_ATTR);
 				for (const nav of document.querySelectorAll("[" + NAV_ATTR + "]")) {
 					nav.removeAttribute(NAV_ATTR);
 					nav.removeAttribute(EMPTY_ATTR);
@@ -209,12 +270,15 @@ window.__ModuleLoader__.load({
 			NAV_ATTR,
 			ENTRY_ATTR,
 			HIDDEN_ATTR,
+			MORE_ATTR,
 			ORDER_VAR,
 			EMPTY_ATTR,
 			css,
 			isPanelRow,
 			mapRows,
-			rowLabel
+			rowLabel,
+			rowHost,
+			collectRows
 		};
 		return module.exports;
 	}

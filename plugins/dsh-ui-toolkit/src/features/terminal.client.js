@@ -996,6 +996,7 @@ window.__ModuleLoader__.load({
 
 		exports.apply = apply;
 		exports.inject = inject;
+		exports.__internals = { loadXterm };
 		return module.exports;
 	}
 });

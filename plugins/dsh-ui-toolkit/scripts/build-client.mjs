@@ -56,6 +56,9 @@ const creators = specs.map(({ file, name }) => {
 const template = fs.readFileSync(path.join(root, "src/client.template.js"), "utf8");
 const marker = "/* @@CREATORS@@ */";
 if (!template.includes(marker)) throw new Error("template placeholder missing");
+const primitivesMarker = "/* @@PRIMITIVES@@ */";
+if (!template.includes(primitivesMarker)) throw new Error("template primitives placeholder missing");
+const primitivesSource = fs.readFileSync(path.join(root, "src/local-primitives.js"), "utf8");
 const vendorMarker = "/* @@VENDOR@@ */";
 if (!template.includes(vendorMarker)) throw new Error("vendor placeholder missing");
 const vendorPath = path.join(root, "vendor/xterm.bundle.js");
@@ -79,7 +82,8 @@ const chunk = [
 	""
 ].join("\n");
 fs.writeFileSync(path.join(root, "lib/client.terminal.js"), chunk);
-const output = template.replace(vendorMarker, "").replace(marker, creators);
+const output = template.replace(vendorMarker, "").replace(primitivesMarker, primitivesSource).replace(marker, creators);
 if (output.includes(marker)) throw new Error("template placeholder not replaced");
+if (output.includes(primitivesMarker)) throw new Error("template primitives placeholder not replaced");
 fs.writeFileSync(path.join(root, "lib/client.js"), output);
 console.log("wrote lib/client.js (" + output.length + " bytes, " + specs.length + " features)");
